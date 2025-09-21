@@ -17,11 +17,6 @@ Requirements:
 
 # Import the necessary Substance Designer modules
 import sd
-from sd.api.sdproperty import *
-from sd.api.sdvaluearray import *
-from sd.api.sdvaluecolorrgba import *
-from sd.api.sdvaluefloat import *
-from sd.api.sdvalueint import *
 
 def main():
     """
@@ -61,12 +56,21 @@ def main():
             current_package = packages[0]
             print(f"📁 Package path: {current_package.getFilePath()}")
             
-            # Get all graphs in the package
-            graphs = current_package.getChildrenOfType(sd.api.sdgraph.SDGraph)
-            print(f"📊 Found {len(graphs)} graph(s) in package:")
-            
-            for i, graph in enumerate(graphs):
-                print(f"   {i+1}. {graph.getIdentifier()} ({graph.getDefinition().getLabel()})")
+            # Get graphs from the package
+            try:
+                # Get the UI manager and try to get the current graph
+                uimgr = app.getUIMgr()
+                graph = uimgr.getCurrentGraph()
+                
+                if graph:
+                    print(f"📊 Found active graph:")
+                    print(f"   • {graph.getIdentifier()}")
+                else:
+                    print("⚠️  No active graph found.")
+                    print("💡 Tip: Create a new graph in Substance Designer first!")
+            except Exception as e:
+                print(f"⚠️  Could not access graph: {str(e)}")
+                print("💡 Tip: Make sure you have a graph open in Substance Designer")
         
         print("\n🎉 Tutorial completed successfully!")
         print("💡 Next: Try tutorial 02_working_with_nodes.py")
