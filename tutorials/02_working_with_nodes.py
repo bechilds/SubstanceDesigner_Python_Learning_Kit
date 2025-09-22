@@ -18,8 +18,6 @@ import sd
 from sd.api.sdnode import *
 from sd.api.sdconnection import *
 from sd.api.sdproperty import *
-from sd.api.sdproperty import SDPropertyCategory
-from sd.api.sdgraph import SDGraph
 
 def main():
     """
@@ -44,39 +42,12 @@ def main():
         print(f"📦 Working with package: {current_package.getFilePath()}")
         
         # Get the first graph (usually the main material graph)
-        current_graph = None
-
-        # Preferred: get the currently active graph from the UI manager
-        try:
-            uimgr = app.getUIMgr()
-            current_graph = uimgr.getCurrentGraph()
-        except Exception:
-            current_graph = None
-
-        # Fallback: try to find graph-like resources inside the package
-        if not current_graph:
-            try:
-                resources = current_package.getResources()
-                graphs = []
-                for r in resources:
-                    try:
-                        if hasattr(r, 'getDefinition') and r.getDefinition().getClass() == 'SDGraph':
-                            graphs.append(r)
-                        elif r.__class__.__name__ == 'SDGraph':
-                            graphs.append(r)
-                    except Exception:
-                        continue
-
-                if graphs:
-                    current_graph = graphs[0]
-            except Exception:
-                # Could not access resources; will report below
-                current_graph = None
-
-        if not current_graph:
-            print("❌ No graphs found in package or no active graph. Please open a graph in Substance Designer and make it active.")
+        graphs = current_package.getChildrenOfType(sd.api.sdgraph.SDGraph)
+        if not graphs:
+            print("❌ No graphs found in package!")
             return
-
+        
+        current_graph = graphs[0]
         print(f"📊 Working with graph: {current_graph.getIdentifier()}")
         
         # Step 1: List all nodes in the graph
