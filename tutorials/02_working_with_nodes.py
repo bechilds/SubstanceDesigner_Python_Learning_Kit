@@ -65,6 +65,7 @@ def main():
         # Look for common node types
         uniform_nodes = []
         noise_nodes = []
+        
         blend_nodes = []
         
         for node in nodes:

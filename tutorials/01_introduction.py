@@ -75,5 +75,8 @@ def main():
         print(f"❌ Error occurred: {str(e)}")
         print("💡 Make sure Substance Designer is running and you have a package loaded!")
 
+
+        
+
 if __name__ == "__main__":
     main()
