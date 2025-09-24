@@ -37,6 +37,31 @@ This workspace contains examples and tutorials to help you learn Substance Desig
 2. **Work through examples/** - See practical implementations
 3. **Create your own scripts in scripts/** - Apply what you learned
 
+### NEW: Plugin (Menu) Development Tutorial
+Want to add a custom top-level menu (e.g., “LGNode”) into Substance Designer?
+Follow the step-by-step guide:
+
+- Tutorial: [docs/tutorial_lgnode_menu_plugin.md](docs/tutorial_lgnode_menu_plugin.md)
+- Progressive example snapshots:
+	- Minimal recognizable plugin: `examples/lgnode_step1_minimal.py`
+	- Adds menu only: `examples/lgnode_step2_menu.py`
+	- Final with action + logging: `examples/lgnode_step3_final.py`
+
+These examples mirror the learning progression and are safe to copy into your user plugin folder for experimentation.
+
+#### Advanced LGNode Tutorials (B–E)
+Build on the basics with practical, production-style tools:
+
+- Tutorial B (Batch Rename Nodes): [docs/tutorial_lgnode_batch_rename.md](docs/tutorial_lgnode_batch_rename.md)
+  - Example: `examples/lgnode_batch_rename.py`
+- Tutorial C (Node Template Builder): [docs/tutorial_lgnode_node_templates.md](docs/tutorial_lgnode_node_templates.md)
+  - Example: `examples/lgnode_node_template.py`
+- Tutorial D (Cleanup Unused / Orphan Nodes): [docs/tutorial_lgnode_cleanup_unused.md](docs/tutorial_lgnode_cleanup_unused.md)
+  - Example: `examples/lgnode_cleanup.py`
+- Tutorial E (Submenus, Icons & Shortcuts): [docs/tutorial_lgnode_submenus_icons.md](docs/tutorial_lgnode_submenus_icons.md)
+
+Each tutorial explains: goals, design decisions, full code, integration snippet, troubleshooting, and extension exercises.
+
 ## 🎯 Common Use Cases
 
 - Automating repetitive node setups

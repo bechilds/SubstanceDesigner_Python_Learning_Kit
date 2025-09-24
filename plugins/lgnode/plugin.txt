@@ -1,0 +1,2 @@
+SUBSTANCE_DESIGNER_PLUGINS
+lgnode=LGNodeLibrary
