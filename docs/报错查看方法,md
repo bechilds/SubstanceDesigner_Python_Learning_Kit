@@ -1,0 +1,91 @@
+当然！让我教你如何分析这个Substance Designer Python插件的报错信息。这是一个非常重要的技能，可以帮你快速定位和解决问题。
+
+## 报错信息解析
+
+让我们逐行分析这个报错：
+
+### 1. 基本信息部分
+```
+[MSG][897][Python]Python SDK Version: 3.9.9 (tags/v3.9.9:ccb0e6a, Nov 15 2021, 18:08:50) [MSC v.1929 64 bit (AMD64)]
+[MSG][898][Python]Python SDK Home: C:/Program Files/Adobe/Adobe Substance 3D Designer/plugins/pythonsdk
+```
+- 这些是正常的信息，显示了Python版本和SDK路径
+- `[MSG]` 表示普通信息消息
+
+### 2. 正常加载过程
+```
+[MSG][901][GraphCleaner]Registered clean graph actions
+[MSG][904][Python]Loaded plugin 'node_align_tools'
+```
+- 系统正常加载其他插件
+
+### 3. 关键错误部分
+```
+[ERR][905][Python]Traceback (most recent call last):
+```
+- `[ERR]` 表示**错误**，这是我们需要重点关注的
+- `Traceback` 是Python的错误追踪信息
+
+### 4. 错误定位
+```
+[ERR][909][Python]  File "C:\Program Files/Adobe/Adobe Substance 3D Designer/resources/python/sdplugins\PluginBasics.py", line 10, in <module>
+[ERR][911][Python]from sd.api.uimgr import SDUIMgr  # 用于操作UI
+```
+- 指出了**具体的文件**：`PluginBasics.py`
+- 指出了**具体的行号**：第10行
+- 指出了**问题代码**：`from sd.api.uimgr import SDUIMgr`
+
+### 5. 错误类型
+```
+[ERR][915][Python]ModuleNotFoundError
+[ERR][917][Python]No module named 'sd.api.uimgr'
+```
+- **错误类型**：`ModuleNotFoundError`
+- **具体问题**：找不到名为 `sd.api.uimgr` 的模块
+
+### 6. 最终结果
+```
+[WRN][918][Python]Failed to load plugin 'PluginBasics', error: 'Failed to load. Check console for details.'
+```
+- `[WRN]` 表示警告
+- 插件加载失败
+
+## 如何读懂报错的通用方法
+
+### 1. 识别错误级别
+- `[MSG]` = 普通信息
+- `[WRN]` = 警告  
+- `[ERR]` = 错误（需要重点关注）
+
+### 2. 找到关键信息
+- **文件名和路径**
+- **行号**
+- **错误类型**（如 `ModuleNotFoundError`, `AttributeError`, `SyntaxError` 等）
+- **错误描述**
+
+### 3. 分析错误原因
+常见的Python错误类型：
+
+| 错误类型 | 含义 | 常见原因 |
+|---------|------|---------|
+| `ModuleNotFoundError` | 找不到模块 | 导入语句错误、模块未安装 |
+| `AttributeError` | 属性不存在 | 对象没有该方法或属性 |
+| `SyntaxError` | 语法错误 | 代码语法不正确 |
+| `NameError` | 名称未定义 | 变量或函数未定义就使用 |
+| `TypeError` | 类型错误 | 参数类型不匹配 |
+
+### 4. 解决步骤
+1. **定位问题**：根据文件名和行号找到具体代码
+2. **理解错误**：分析错误类型和描述
+3. **查找文档**：查看官方API文档
+4. **修复代码**：根据正确的API使用方法修改
+5. **测试验证**：重新加载插件测试
+
+## 这次错误的解决思路
+
+1. **错误分析**：`ModuleNotFoundError: No module named 'sd.api.uimgr'`
+2. **问题定位**：第10行的导入语句有问题
+3. **解决方案**：查阅SD API文档，发现应该通过 `sd.getContext().getSDApplication().getUIMgr()` 访问
+4. **修复方法**：删除错误的导入语句
+
+这样的分析方法可以帮你解决大部分Substance Designer Python插件开发中遇到的问题！
