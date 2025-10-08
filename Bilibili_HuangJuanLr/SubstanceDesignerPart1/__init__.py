@@ -63,20 +63,30 @@ all_packages = pkg_mgr.getPackages()
 # graph.newNode("sbs::compositing::blend") #新增节点，SD内置的节点
 
 
-#方法4：获取当前节点的属性
+#方法4：通过图形获取当前节点，使用节点的方法获取节点相关参数属性
 graph = ui_mgr.getCurrentGraph()    # 获取当前图形
 all_nodes = graph.getNodes() #获取所有节点
 selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节点
 
-for node in selected_node: #遍历所有节点
-    print(node.getDefinition()) #获取节点定义
-    print(node.getIdentifier()) #获取节点标识符
-    print(node.getDefinition().getId()) #获取节点定义的ID
+# for node in selected_node: #遍历所有节点
+#     print(node.getDefinition()) #获取节点定义
+#     print(node.getIdentifier()) #获取节点标识符
+#     print(node.getDefinition().getId()) #获取节点定义的ID
 
+
+#方法5：通过getProperties()方法获取节点的属性
+#Annotation 备注 节点的描述信息，Attribute 属性 节点的属性
+#input   输入 BASE PARAMETER 输入值
+#output  输出  当前图表的输出
+selected_props = selected_node[0].getProperties(SDPropertyCategory.Annotation)
+for prop in selected_props: #遍历所有属性
+    print(prop.getType()) #获取属性类型 
+    print(prop.getCategory()) #获取属性类别  SDPropertyType annotation input output parameter
+    print(prop.getId())
 
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
-def initializeSDPlugin(): 
+def initializeSDPlugin():
     pass
 
 def uninitializeSDPlugin():
