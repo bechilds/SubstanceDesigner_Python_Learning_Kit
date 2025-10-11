@@ -78,11 +78,20 @@ selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节�
 #Annotation 备注 节点的描述信息，Attribute 属性 节点的属性
 #input   输入 BASE PARAMETER 输入值
 #output  输出  当前图表的输出
-selected_props = selected_node[0].getProperties(SDPropertyCategory.Annotation)
-for prop in selected_props: #遍历所有属性
-    print(prop.getType()) #获取属性类型 
-    print(prop.getCategory()) #获取属性类别  SDPropertyType annotation input output parameter
-    print(prop.getId())
+# selected_props = selected_node[0].getProperties(SDPropertyCategory.Annotation)
+# for prop in selected_props: #遍历所有属性
+#     print(prop.getType()) #获取属性类型 
+#     print(prop.getCategory()) #获取属性类别  SDPropertyType annotation input output parameter
+#     print(prop.getId())
+
+
+#方法6：创建节点，并将其链接到当前选择的节点上
+selected_props = selected_node[0].getProperties(SDPropertyCategory.Output)
+
+uniform_color_node = graph.newNode("sbs::compositing::uniform")
+uniform_color_node.newPropertyConnectionFromId("unique_filter_ouput",selected_node[0],"basecolor")
+
+
 
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
