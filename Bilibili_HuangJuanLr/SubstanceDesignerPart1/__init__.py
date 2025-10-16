@@ -92,7 +92,7 @@ uniform_color_node = graph.newNode("sbs::compositing::uniform")
 uniform_color_node.newPropertyConnectionFromId("unique_filter_ouput",selected_node[0],"basecolor")
 
 
-
+#test
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
 def initializeSDPlugin():
