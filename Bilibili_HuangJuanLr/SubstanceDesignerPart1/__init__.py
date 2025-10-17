@@ -66,7 +66,7 @@ all_packages = pkg_mgr.getPackages()
 #方法4：通过图形获取当前节点，使用节点的方法获取节点相关参数属性
 graph = ui_mgr.getCurrentGraph()    # 获取当前图形
 all_nodes = graph.getNodes() #获取所有节点
-selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节点
+selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节点,返回一个列表
 
 # for node in selected_node: #遍历所有节点
 #     print(node.getDefinition()) #获取节点定义
@@ -79,20 +79,24 @@ selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节�
 #input   输入 BASE PARAMETER 输入值
 #output  输出  当前图表的输出
 # selected_props = selected_node[0].getProperties(SDPropertyCategory.Annotation)
+#使用getProperties()方法获取节点的属性,需要导入SDPropertyCategory模块
 # for prop in selected_props: #遍历所有属性
 #     print(prop.getType()) #获取属性类型 
 #     print(prop.getCategory()) #获取属性类别  SDPropertyType annotation input output parameter
-#     print(prop.getId())
+#     print(prop.getId()) #获取属性ID
 
 
 #方法6：创建节点，并将其链接到当前选择的节点上
-selected_props = selected_node[0].getProperties(SDPropertyCategory.Output)
+selected_props = selected_node[0].getProperties(SDPropertyCategory.Output) #Prop 是 property 的缩写形式，为了方便，业内人员通常把 theatrical property（舞台道具）简称为 prop
 
-uniform_color_node = graph.newNode("sbs::compositing::uniform")
-uniform_color_node.newPropertyConnectionFromId("unique_filter_ouput",selected_node[0],"basecolor")
+uniform_color_node = graph.newNode("sbs::compositing::uniform")#新增节点
+uniform_color_node.newPropertyConnectionFromId("unique_filter_ouput",selected_node[0],"basecolor") #newPropertyConnectionFromId(目标属性ID,源节点,源属性ID),选择节点的属性连接
 
 
-#test
+#方法7，获取选择节点的位置
+#需要导入
+
+processor_pos = selected_node[0].getPosition() #获取节点位置
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
 def initializeSDPlugin():
