@@ -3,7 +3,8 @@ import os  # 导入os模块
 
 
 #按需导入功能模块
-from sd.api.sdproperty import SDPropertyCategory # 属性类
+from sd.api.sdproperty import SDPropertyCategory # 导入参数类型枚举，用于调用 getProperties() 方法
+from sd.api.sdbasetypes import float2 # 导入基础类型模块 ,getPosition() 方法返回 float2 类型,python没有内置的二维向量类型，需要导入 float2 类型来表示二维向量，这里的sd.api.sdbasetypes.float2 就是SD提供的二维向量类型
 
 context = sd.getContext()  # 获取上下文，SD 插件入口
 app = context.getSDApplication()  # 获取应用对象
@@ -12,8 +13,9 @@ pkg_mgr = app.getPackageMgr()  # 获取包管理器
 ui_mgr = app.getQtForPythonUIMgr() ## 获取 Qt UI 管理器
 
 
-# 获取所有包
-all_packages = pkg_mgr.getPackages()
+all_packages = pkg_mgr.getPackages() # 获取所有包列表
+
+
 
 #方法1：获取package 路径
 # for package in all_packages:
@@ -90,13 +92,15 @@ selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节�
 selected_props = selected_node[0].getProperties(SDPropertyCategory.Output) #Prop 是 property 的缩写形式，为了方便，业内人员通常把 theatrical property（舞台道具）简称为 prop
 
 uniform_color_node = graph.newNode("sbs::compositing::uniform")#新增节点
-uniform_color_node.newPropertyConnectionFromId("unique_filter_ouput",selected_node[0],"basecolor") #newPropertyConnectionFromId(目标属性ID,源节点,源属性ID),选择节点的属性连接
+uniform_color_node.newPropertyConnectionFromId("unique_filter_output",selected_node[0],"basecolor") #newPropertyConnectionFromId(目标属性ID,源节点,源属性ID),选择节点的属性连接
 
 
-#方法7，获取选择节点的位置
-#需要导入
+#方法7，获取选择节点的位置，并设置新增节点位置
 
-processor_pos = selected_node[0].getPosition() #获取节点位置
+processor_pos = selected_node[0].getPosition() #获取选择节点位置,导入sdbasetypes模块的float2类型
+uniform_color_node.setPosition(float2(processor_pos.x-200,processor_pos.y)) #设置新增节点位置
+
+
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
 def initializeSDPlugin():
