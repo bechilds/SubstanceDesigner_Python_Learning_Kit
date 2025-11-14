@@ -4,7 +4,17 @@ import os  # 导入os模块
 
 #按需导入功能模块
 from sd.api.sdproperty import SDPropertyCategory # 导入参数类型枚举，用于调用 getProperties() 方法
-from sd.api.sdbasetypes import float2 # 导入基础类型模块 ,getPosition() 方法返回 float2 类型,python没有内置的二维向量类型，需要导入 float2 类型来表示二维向量，这里的sd.api.sdbasetypes.float2 就是SD提供的二维向量类型
+from sd.api.sdbasetypes import float2 , float4 # 导入基础类型模块 ,getPosition() 方法返回 float2 类型,python没有内置的二维向量类型，需要导入 float2 类型来表示二维向量，这里的sd.api.sdbasetypes.float2 就是SD提供的二维向量类型
+#导入 float4 类型模块，用于表示四维向量，在sdvaluefloat4 中
+from sd.api.sdvaluefloat4 import SDValueFloat4 # 导入 float4 类型模块，用于设置颜色值,sbs::compositing::uniform 节点的颜色属性是一个四维向量，表示 RGBA 颜色值，因此需要使用 SDValueFloat4 类型来设置该属性的值,这个类中内置一个Static静态函数 SNew() 创建一个 SDValueFloat4 对象，这个对象需要sd.api.sdbasetypes.float4 类型的参数.
+#静态方法 sNew 是在 SDValueFloat4 类上调用的，所以它的作用是创建一个 SDValueFloat4 的新实例，而不是 sdbasetypes.float4。它的函数原型应该是这样的（概念上的）：
+# static sNew(value: sdbasetypes.float4) -> SDValueFloat4
+# 输入: 它接收一个基础数据类型的对象，也就是一个 “现金” (sdbasetypes.float4) 。
+# 输出: 它返回一个封装好的值对象，也就是一个 “钱包” (SDValueFloat4) 。
+# 所以，这个方法确实实现了我们之前讨论的“反向”过程：
+# sdbasetypes.float4 --- (通过 SDValueFloat4.sNew() 方法) ---> SDValueFloat4
+from sd.api.sdvaluefloat import SDValueFloat # 导入 float 类型模块，用于设置数值属性,sbs::compositing::hue节点的Hue属性是一个浮点数值，因此需要使用 SDValueFloat 类型来设置该属性的值，这个类中内置一个Static静态函数 SNew() 创建一个 SDValueFloat 对象，这个对象需要float类型的参数.
+
 
 context = sd.getContext()  # 获取上下文，SD 插件入口
 app = context.getSDApplication()  # 获取应用对象
@@ -99,6 +109,23 @@ uniform_color_node.newPropertyConnectionFromId("unique_filter_output",selected_n
 
 processor_pos = selected_node[0].getPosition() #获取选择节点位置,导入sdbasetypes模块的float2类型
 uniform_color_node.setPosition(float2(processor_pos.x-200,processor_pos.y)) #设置新增节点位置
+
+#方法8：设置uniform节点输出颜色
+#output_color = uniform_color_node.getPropertyValueFromId("outputcolor") #getPropertyValueFromId(属性ID)是获取属性值的方法，应该先获取属性对象，再获取属性值
+output_color = uniform_color_node.getPropertyFromId("outputcolor",SDPropertyCategory.Input) #获取属性对象，getPropertyFromId(属性ID,属性类别)
+uniform_color_node.setPropertyValue(output_color, SDValueFloat4.sNew(float4(1.0, 0.0, 0.0, 1.0)))#SetPropertyValue(属性对象,属性值),设置属性值的方法，需要导入sdvaluefloat4模块的SDValueFloat4类型和sdbasetypes模块的float4类型
+
+
+
+#方法9：获取当前选择节点的Hue,Saturation,Lightness属性
+hue = selected_node[0].getPropertyFromId("hue",SDPropertyCategory.Input)  # 在当前课程节点的proceesor中，Identifier hue,Label 为Hue.getPropertyFromId("hue",SDPropertyCategory.Input), 获取的应该是Identifier hue。
+Saturation = selected_node[0].getPropertyFromId("saturation",SDPropertyCategory.Input)#在当前课程节点的proceesor中，Identifier saturation,Label 为Saturation.getPropertyFromId("saturation",SDPropertyCategory.Input), 获取的应该是Identifier saturation。
+Lightness = selected_node[0].getPropertyFromId("luminosity",SDPropertyCategory.Input) #在当前课程节点的proceesor中，Identifier luminosity,Label 为Lightness.getPropertyFromId("luminosity",SDPropertyCategory.Input), 获取的应该是Identifier luminosity。
+
+
+selected_node[0].setPropertyValue(hue, SDValueFloat.sNew(0.5)) #设置Hue属性值
+selected_node[0].setPropertyValue(Saturation, SDValueFloat.sNew(0.8)) #设置Saturation属性值
+selected_node[0].setPropertyValue(Lightness, SDValueFloat.sNew(0.2)) #设置Lightness属性值
 
 
 
