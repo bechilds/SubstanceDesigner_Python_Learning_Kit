@@ -1,0 +1,2 @@
+- [x] Preserve each dock widget's original visibility state while fixing floating panels
+- [ ] Only reposition top-level windows that are actually off-screen without toggling their visibility unnecessarily

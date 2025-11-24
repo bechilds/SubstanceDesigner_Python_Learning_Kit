@@ -16,6 +16,9 @@ from sd.api.sdvaluefloat4 import SDValueFloat4 # 导入 float4 类型模块，�
 from sd.api.sdvaluefloat import SDValueFloat # 导入 float 类型模块，用于设置数值属性,sbs::compositing::hue节点的Hue属性是一个浮点数值，因此需要使用 SDValueFloat 类型来设置该属性的值，这个类中内置一个Static静态函数 SNew() 创建一个 SDValueFloat 对象，这个对象需要float类型的参数.
 
 
+
+
+
 context = sd.getContext()  # 获取上下文，SD 插件入口
 app = context.getSDApplication()  # 获取应用对象
 
