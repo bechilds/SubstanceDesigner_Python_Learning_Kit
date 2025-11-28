@@ -15,6 +15,7 @@ from sd.api.sdvaluefloat4 import SDValueFloat4 # 导入 float4 类型模块，�
 # sdbasetypes.float4 --- (通过 SDValueFloat4.sNew() 方法) ---> SDValueFloat4
 from sd.api.sdvaluefloat import SDValueFloat # 导入 float 类型模块，用于设置数值属性,sbs::compositing::hue节点的Hue属性是一个浮点数值，因此需要使用 SDValueFloat 类型来设置该属性的值，这个类中内置一个Static静态函数 SNew() 创建一个 SDValueFloat 对象，这个对象需要float类型的参数.
 
+from PySide2 import QtWidgets, QtCore, QtGui, QtUiTools # 导入 PySide2 模块 用于界面操作,pyside2 是qt的python接口,QtWidgets用于创建和操作GUI元素，QtCore包含核心非GUI功能，QtGui用于图形相关功能，QtUiTools用于加载.ui文件
 
 
 
@@ -25,9 +26,7 @@ app = context.getSDApplication()  # 获取应用对象
 pkg_mgr = app.getPackageMgr()  # 获取包管理器
 ui_mgr = app.getQtForPythonUIMgr() ## 获取 Qt UI 管理器
 
-
 all_packages = pkg_mgr.getPackages() # 获取所有包列表
-
 
 
 #方法1：获取package 路径
@@ -80,8 +79,9 @@ all_packages = pkg_mgr.getPackages() # 获取所有包列表
 
 #方法4：通过图形获取当前节点，使用节点的方法获取节点相关参数属性
 graph = ui_mgr.getCurrentGraph()    # 获取当前图形
-all_nodes = graph.getNodes() #获取所有节点
-selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节点,返回一个列表
+# all_nodes = graph.getNodes() #获取所有节点
+# selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节点,返回一个列表
+
 
 # for node in selected_node: #遍历所有节点
 #     print(node.getDefinition()) #获取节点定义
@@ -102,34 +102,50 @@ selected_node = ui_mgr.getCurrentGraphSelectedNodes()#获取当前选中的节�
 
 
 #方法6：创建节点，并将其链接到当前选择的节点上
-selected_props = selected_node[0].getProperties(SDPropertyCategory.Output) #Prop 是 property 的缩写形式，为了方便，业内人员通常把 theatrical property（舞台道具）简称为 prop
+# selected_props = selected_node[0].getProperties(SDPropertyCategory.Output) #Prop 是 property 的缩写形式，为了方便，业内人员通常把 theatrical property（舞台道具）简称为 prop
 
-uniform_color_node = graph.newNode("sbs::compositing::uniform")#新增节点
-uniform_color_node.newPropertyConnectionFromId("unique_filter_output",selected_node[0],"basecolor") #newPropertyConnectionFromId(目标属性ID,源节点,源属性ID),选择节点的属性连接
+# uniform_color_node = graph.newNode("sbs::compositing::uniform")#新增节点
+# uniform_color_node.newPropertyConnectionFromId("unique_filter_output",selected_node[0],"basecolor") #newPropertyConnectionFromId(目标属性ID,源节点,源属性ID),选择节点的属性连接
 
 
-#方法7，获取选择节点的位置，并设置新增节点位置
+# #方法7，获取选择节点的位置，并设置新增节点位置
 
-processor_pos = selected_node[0].getPosition() #获取选择节点位置,导入sdbasetypes模块的float2类型
-uniform_color_node.setPosition(float2(processor_pos.x-200,processor_pos.y)) #设置新增节点位置
+# processor_pos = selected_node[0].getPosition() #获取选择节点位置,导入sdbasetypes模块的float2类型
+# uniform_color_node.setPosition(float2(processor_pos.x-200,processor_pos.y)) #设置新增节点位置
 
-#方法8：设置uniform节点输出颜色
-#output_color = uniform_color_node.getPropertyValueFromId("outputcolor") #getPropertyValueFromId(属性ID)是获取属性值的方法，应该先获取属性对象，再获取属性值
-output_color = uniform_color_node.getPropertyFromId("outputcolor",SDPropertyCategory.Input) #获取属性对象，getPropertyFromId(属性ID,属性类别)
-uniform_color_node.setPropertyValue(output_color, SDValueFloat4.sNew(float4(1.0, 0.0, 0.0, 1.0)))#SetPropertyValue(属性对象,属性值),设置属性值的方法，需要导入sdvaluefloat4模块的SDValueFloat4类型和sdbasetypes模块的float4类型
+# #方法8：设置uniform节点输出颜色
+# #output_color = uniform_color_node.getPropertyValueFromId("outputcolor") #getPropertyValueFromId(属性ID)是获取属性值的方法，应该先获取属性对象，再获取属性值
+# output_color = uniform_color_node.getPropertyFromId("outputcolor",SDPropertyCategory.Input) #获取属性对象，getPropertyFromId(属性ID,属性类别)
+# uniform_color_node.setPropertyValue(output_color, SDValueFloat4.sNew(float4(1.0, 0.0, 0.0, 1.0)))#SetPropertyValue(属性对象,属性值),设置属性值的方法，需要导入sdvaluefloat4模块的SDValueFloat4类型和sdbasetypes模块的float4类型
 
 
 
 #方法9：获取当前选择节点的Hue,Saturation,Lightness属性
-hue = selected_node[0].getPropertyFromId("hue",SDPropertyCategory.Input)  # 在当前课程节点的proceesor中，Identifier hue,Label 为Hue.getPropertyFromId("hue",SDPropertyCategory.Input), 获取的应该是Identifier hue。
-Saturation = selected_node[0].getPropertyFromId("saturation",SDPropertyCategory.Input)#在当前课程节点的proceesor中，Identifier saturation,Label 为Saturation.getPropertyFromId("saturation",SDPropertyCategory.Input), 获取的应该是Identifier saturation。
-Lightness = selected_node[0].getPropertyFromId("luminosity",SDPropertyCategory.Input) #在当前课程节点的proceesor中，Identifier luminosity,Label 为Lightness.getPropertyFromId("luminosity",SDPropertyCategory.Input), 获取的应该是Identifier luminosity。
+# hue = selected_node[0].getPropertyFromId("hue",SDPropertyCategory.Input)  # 在当前课程节点的proceesor中，Identifier hue,Label 为Hue.getPropertyFromId("hue",SDPropertyCategory.Input), 获取的应该是Identifier hue。
+# Saturation = selected_node[0].getPropertyFromId("saturation",SDPropertyCategory.Input)#在当前课程节点的proceesor中，Identifier saturation,Label 为Saturation.getPropertyFromId("saturation",SDPropertyCategory.Input), 获取的应该是Identifier saturation。
+# Lightness = selected_node[0].getPropertyFromId("luminosity",SDPropertyCategory.Input) #在当前课程节点的proceesor中，Identifier luminosity,Label 为Lightness.getPropertyFromId("luminosity",SDPropertyCategory.Input), 获取的应该是Identifier luminosity。
 
 
-selected_node[0].setPropertyValue(hue, SDValueFloat.sNew(0.5)) #设置Hue属性值
-selected_node[0].setPropertyValue(Saturation, SDValueFloat.sNew(0.8)) #设置Saturation属性值
-selected_node[0].setPropertyValue(Lightness, SDValueFloat.sNew(0.2)) #设置Lightness属性值
+# selected_node[0].setPropertyValue(hue, SDValueFloat.sNew(0.5)) #设置Hue属性值
+# selected_node[0].setPropertyValue(Saturation, SDValueFloat.sNew(0.8)) #设置Saturation属性值
+# selected_node[0].setPropertyValue(Lightness, SDValueFloat.sNew(0.2)) #设置Lightness属性值
 
+
+
+#方法10：创建substance 的Dialog对话窗口
+main_window = ui_mgr.getMainWindow() #获取主窗口对象
+
+def test_function():
+    print("测试窗口创建成功")
+
+dialog = QtWidgets.QDialog(parent=main_window) #创建对话窗口，指定主窗口为父窗口
+# dialog.show() #显示对话窗口
+
+menu_bar = main_window.menuBar() #获取主窗口的菜单栏
+menu = QtWidgets.QMenu("TEST",menu_bar)#创建菜单对象
+menu_bar.addMenu(menu) #将菜单添加到菜单栏
+action = QtGui.QAction("Open Test Dialog",menu) #创建菜单项对象
+action.triggered.connect(dialog.show) #将菜单项的触发信号连接到对话窗口的显示槽函数
 
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
