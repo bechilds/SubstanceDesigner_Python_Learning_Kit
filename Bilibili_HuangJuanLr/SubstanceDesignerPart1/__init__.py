@@ -135,18 +135,32 @@ graph = ui_mgr.getCurrentGraph()    # 获取当前图形
 #方法10：创建substance 的Dialog对话窗口
 main_window = ui_mgr.getMainWindow() #获取主窗口对象
 
-def test_function():
-    print("测试窗口创建成功")
+menu_id = "TestDialogMenu" + "#123"  # 创建菜单ID，确保唯一性，+ #123 是为了确保唯一性
+
 
 dialog = QtWidgets.QDialog(parent=main_window) #创建对话窗口，指定主窗口为父窗口
 # dialog.show() #显示对话窗口
 
-menu_bar = main_window.menuBar() #获取主窗口的菜单栏
-menu = QtWidgets.QMenu("TEST",menu_bar)#创建菜单对象
-menu_bar.addMenu(menu) #将菜单添加到菜单栏
-action = QtGui.QAction("Open Test Dialog",menu) #创建菜单项对象
-action.triggered.connect(dialog.show) #将菜单项的触发信号连接到对话窗口的显示槽函数
 
+def test_function():
+    # print("测试窗口创建成功")
+    dialog.show() #显示对话窗口
+
+menu_bar = main_window.menuBar() #获取主窗口的菜单栏
+
+menu = ui_mgr.findMenuFromObjectName(menu_id) #通过菜单ID查找菜单对象
+if menu is not None:
+    ui_mgr.deleteMenu(menu_id) #删除已存在的菜单，避免重复创建
+
+
+menu = QtWidgets.QMenu("TEST",menu_bar)#创建菜单对象
+
+menu.setObjectName(menu_id)
+
+menu_bar.addMenu(menu) #将菜单添加到菜单栏
+action = QtWidgets.QAction("Open Test Dialog",menu) #创建菜单项对象,QAction再pyside6中移到了QtGui模块下(菜单项名称,父对象)
+action.triggered.connect(test_function) #将菜单项的触发信号连接到对话窗口的显示槽函数
+menu.addAction(action) #将菜单项添加到菜单
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
 def initializeSDPlugin():
