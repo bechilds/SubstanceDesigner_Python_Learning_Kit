@@ -135,11 +135,17 @@ graph = ui_mgr.getCurrentGraph()    # 获取当前图形
 #方法10：创建substance 的Dialog对话窗口
 main_window = ui_mgr.getMainWindow() #获取主窗口对象
 
-menu_id = "TestDialogMenu" + "#123"  # 创建菜单ID，确保唯一性，+ #123 是为了确保唯一性
+menu_id = "TestDialogMenu" + "#123"  # 创建菜单ID，确保唯一性，+ #123 是为了确保唯一性，分开写是为了易读性。也可以合并写。
 
 
 dialog = QtWidgets.QDialog(parent=main_window) #创建对话窗口，指定主窗口为父窗口
-# dialog.show() #显示对话窗口
+# 层级关系：当父窗口（SD 主窗口）关闭时，子窗口（这个对话框）也会自动关闭，防止残留。
+# 显示位置：对话框通常会默认显示在父窗口的中心，而不是屏幕的随机角落。
+# 任务栏图标：子窗口通常不会在任务栏显示独立的图标，而是依附于父窗口。
+# 模态行为：如果你把对话框设为模态（Modal），它会阻塞父窗口的操作，直到对话框关闭。指定父窗口是实现这一点的基础。
+
+
+# dialog.show() #显示对话窗口命令
 
 
 def test_function():
@@ -155,7 +161,7 @@ if menu is not None:
 
 menu = QtWidgets.QMenu("TEST",menu_bar)#创建菜单对象
 
-menu.setObjectName(menu_id)
+menu.setObjectName(menu_id)#设置菜单ID
 
 menu_bar.addMenu(menu) #将菜单添加到菜单栏
 action = QtWidgets.QAction("Open Test Dialog",menu) #创建菜单项对象,QAction再pyside6中移到了QtGui模块下(菜单项名称,父对象)
