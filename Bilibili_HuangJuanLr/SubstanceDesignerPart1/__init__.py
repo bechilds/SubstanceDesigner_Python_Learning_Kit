@@ -133,12 +133,12 @@ graph = ui_mgr.getCurrentGraph()    # 获取当前图形
 
 
 #方法10：创建substance 的Dialog对话窗口
-main_window = ui_mgr.getMainWindow() #获取主窗口对象
+main_window = ui_mgr.getMainWindow() #获取主窗口对象,getMainWindow()是获取主窗口对象的方法
 
 menu_id = "TestDialogMenu" + "#123"  # 创建菜单ID，确保唯一性，+ #123 是为了确保唯一性，分开写是为了易读性。也可以合并写。
 
 
-dialog = QtWidgets.QDialog(parent=main_window) #创建对话窗口，指定主窗口为父窗口
+dialog = QtWidgets.QDialog(parent=main_window) #创建对话窗口，指定主窗口为父窗口，QDialog语法(parent=父对象),这样做有几个好处：
 # 层级关系：当父窗口（SD 主窗口）关闭时，子窗口（这个对话框）也会自动关闭，防止残留。
 # 显示位置：对话框通常会默认显示在父窗口的中心，而不是屏幕的随机角落。
 # 任务栏图标：子窗口通常不会在任务栏显示独立的图标，而是依附于父窗口。
@@ -150,23 +150,23 @@ dialog = QtWidgets.QDialog(parent=main_window) #创建对话窗口，指定主�
 
 def test_function():
     # print("测试窗口创建成功")
-    dialog.show() #显示对话窗口
+    dialog.show() #显示对话窗口,show() 方法用于显示窗口
 
 menu_bar = main_window.menuBar() #获取主窗口的菜单栏
 
 menu = ui_mgr.findMenuFromObjectName(menu_id) #通过菜单ID查找菜单对象
-if menu is not None:
+if menu is not None:          # 判断菜单对象是否存在
     ui_mgr.deleteMenu(menu_id) #删除已存在的菜单，避免重复创建
 
 
-menu = QtWidgets.QMenu("TEST",menu_bar)#创建菜单对象
+menu = QtWidgets.QMenu("TEST",menu_bar)#创建菜单对象,QMenu语法(菜单名称,父对象)
 
-menu.setObjectName(menu_id)#设置菜单ID
+menu.setObjectName(menu_id)     #设置菜单ID,setObjectName() 方法用于设置对象名称,即menu的对象名称，用于查找和删除菜单对象
 
-menu_bar.addMenu(menu) #将菜单添加到菜单栏
-action = QtWidgets.QAction("Open Test Dialog",menu) #创建菜单项对象,QAction再pyside6中移到了QtGui模块下(菜单项名称,父对象)
-action.triggered.connect(test_function) #将菜单项的触发信号连接到对话窗口的显示槽函数
-menu.addAction(action) #将菜单项添加到菜单
+menu_bar.addMenu(menu) #将菜单添加到菜单栏，addMenu() 方法用于将菜单添加到菜单栏，即添加对象名称为 menu_id 的菜单对象到菜单栏中，
+action = QtWidgets.QAction("Open Test Dialog",menu) #创建菜单项对象,QAction再pyside6中移到了QtGui模块下(菜单项名称,父对象)，QAction 用于创建菜单项或工具栏按钮，QAction 语法(菜单项名称,父对象)
+action.triggered.connect(test_function) #将菜单项的触发信号连接到对话窗口的显示槽函数，triggered 信号在菜单项被点击时发出，connect() 方法用于连接信号和槽函数，这里将菜单项的触发信号连接到 test_function 函数，当菜单项被点击时，会调用 test_function 函数，从而显示对话窗口
+menu.addAction(action) #将菜单项添加到菜单,addAction() 方法用于将菜单项添加到菜单中，即将对象名称为 action 的菜单项添加到菜单对象 menu 中
 
 # 插件初始化函数 SD 会自动调用 必须存在 才能被识别
 def initializeSDPlugin():
