@@ -8,7 +8,7 @@ class window(QtWidgets.QDialog):
         
         #super()是用来调用父类的方法的，语法是 super(子类名, self).方法名()，通过super()就可以访问父类的方法__init__().
         #__init__() 是父类构造函数，在子类初始化的时候，必须调用父类的构造函数，否则，子类实例将没有父类的属性和方法。
-        # 这里调用父类的__init__()方法，传入子类window的parent参数，确保子类window正确继承父类QtWidgets.QDialog的属性和行为。
+        # 这里调用父类的__init__()方法，按照参数位置传入子类window的parent参数（也可以叫其他参数名），确保子类window正确继承父类QtWidgets.QDialog的属性和行为。
 
         super(window, self).__init__(parent)
 
@@ -21,7 +21,7 @@ class window(QtWidgets.QDialog):
         self.ui_mgr = ui_mgr
 
 
-        #self.window 
+        #self.window ，！！！AI对这句有疑问，认为冗余。后面再测试理解！！！
         self.window = QtWidgets.QDialog(parent=parent) #创建一个对话框窗口，parent是父窗口
 
 

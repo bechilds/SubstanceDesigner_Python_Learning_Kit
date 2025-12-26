@@ -1,0 +1,10 @@
+
+import sd 
+
+
+
+from PySide2 import QtWidgets, QtCore, QtGui, QtUiTools
+from mylib import window
+
+
+
