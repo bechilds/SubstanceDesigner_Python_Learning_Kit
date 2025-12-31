@@ -2,9 +2,15 @@
 import sd 
 
 
-
+#按需导入功能模块
 from PySide2 import QtWidgets, QtCore, QtGui, QtUiTools
-from mylib import window
+
+
+
+#获取我的插件的路径
+# from mylib import window
+
+
 
 
 
