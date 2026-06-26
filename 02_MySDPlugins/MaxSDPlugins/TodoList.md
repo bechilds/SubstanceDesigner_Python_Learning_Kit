@@ -1,6 +1,8 @@
 我的插件功能计划
 插件名称：MaxSDPlugin
 
+[已完成] Output/曝光参数：按 INPUT PARAMETERS / INPUTS 分组枚举（排除 $ 基础参数）+ 勾选 + OutputData 缓存/导出 + 删除（取消暴露：先 deletePropertyGraph 把依赖节点参数重置回常量，再 deleteProperty；UndoGroup 可撤销 + 删前自动备份）+ 加载历史并应用值。待扩展：复杂类型(向量/颜色/枚举)的值还原、已删除参数的重新暴露。
+
 显示插件版本
 显示软件版本
 显示pyside版本

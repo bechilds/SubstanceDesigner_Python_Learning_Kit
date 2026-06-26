@@ -6,30 +6,38 @@
 
 ## 📁 Project Structure
 
+本工程按**三个分类**组织，每个分类目录下都有独立的 `README.md` 说明：
+
 ```
-── OfficialExamples             # 官方案例
+01_BilibiliTutorial/            # ① B 站教程项目（黄卷Lr）
+├── Bilibili_HuangJuanLr/       #    教程配套代码
+└── SDFiles/                    #    教程练习用的 .sbs 文件
 
-── OfficialSDInsertPlugins      # Substance内置的案例插件
+02_MySDPlugins/                 # ② 我的插件开发项目（计划开发）
+├── MaxSDPlugins/               #    插件主目录（含 TodoList 计划）
+├── utilities/                  #    可复用的工具脚本
+└── docs/                       #    基础概念备注 / 文档 / 开发日志
 
-── utilities                    # 工具脚本
+03_OfficialExamples/            # ③ 官方案例（API 权威参考）
+├── OfficialExamples/           #    官方基础脚本案例
+└── OfficialSDInsertPlugins/    #    SD 内置插件案例
+```
 
-── MyPlugins                    # 我的插件练习
-
-── docs                         # 基础概念备注/日志
-
-—— SDFiles                      # 用于存放练习脚本开发所需的小文件
-
-
+> 各分类详细说明见：
+> [01_BilibiliTutorial/README.md](01_BilibiliTutorial/README.md) ·
+> [02_MySDPlugins/README.md](02_MySDPlugins/README.md) ·
+> [03_OfficialExamples/README.md](03_OfficialExamples/README.md)
 
 ## 🛠 Requirements
 
-- Adobe Substance Designer (13.0)
-- Python 3.9+ (included with Substance Designer) 意味着代码需要再SD中的python解释器运行
+- Adobe Substance 3D Designer 16.0.1（本人当前使用版本）
+- Python 3.13.x（SD 16.0 内置）—— 代码需在 SD 内置的 Python 解释器中运行
+- PySide6 / Qt 6.8.x（SD 16.0 内置的 QtForPython，用于 UI 开发）
 - Basic understanding of Substance Designer interface
 
 ## 📖 Learning Path
 
-OfficialExamples => OfficialSDInsertPlugins => MyPlugins 
+03_OfficialExamples（官方案例）→ 01_BilibiliTutorial（教程实践）→ 02_MySDPlugins（自研插件）
 
 
 ## 🎯 Common Use Cases
@@ -43,10 +51,16 @@ OfficialExamples => OfficialSDInsertPlugins => MyPlugins
 
 ## 🔧 Running Scripts
 
-### In Substance Designer:
-1. Open Substance Designer
-2. Go to Tools > Scripting > Script Editor
-3. Load and run your Python scripts
+### In Substance Designer (16.0.1):
+1. 打开 Substance 3D Designer
+2. 从菜单栏 **`Windows > Python Editor`** 打开 Python 编辑器面板
+3. 粘贴代码，点 **Run**（或按 `F5`；运行选中部分用 `Ctrl+Enter`），输出显示在控制台
+
+### 作为插件加载：
+- 把插件放入 SD 的用户 Python 插件目录，启动时自动调用 `initializeSDPlugin()`；
+- 或通过 **`Tools > Plugin Manager...`** 查看 / 管理已加载的插件。
+
+> 注：SD 没有 `Tools > Scripting` 菜单。脚本运行统一走 **Python Editor**（`Windows` 菜单），插件管理走 **Plugin Manager**（`Tools` 菜单）。
 
 
 
