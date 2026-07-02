@@ -12,6 +12,8 @@ import datetime
 
 import sd  # SD 提供的 Python 包；只在 SD 进程内可用
 
+from .. import sdcompat  # 跨版本 SD/Qt 接口兼容层（唯一真源）
+
 # SD 专有类型：用 try 包住，工作区 lint 找不到属正常
 try:
     from sd.api.sdproperty import SDPropertyCategory
@@ -294,13 +296,31 @@ def _is_get_function_node(fnode):
         return False
 
 
-def _collect_get_var_status(func_graph):
+def _graph_input_ids(graph):
+    """返回图所有输入参数 id 的集合，用于判定 Get 变量是否悬空（变量名仍在但参数已删）。"""
+    ids = set()
+    if graph is None or SDPropertyCategory is None:
+        return ids
+    try:
+        props = graph.getProperties(SDPropertyCategory.Input)
+        for i in range(len(props)):
+            try:
+                ids.add(props[i].getId())
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return ids
+
+
+def _collect_get_var_status(func_graph, valid_ids=None):
     """收集一个属性函数图里所有 Get 节点引用的变量状态。
 
     返回 (names, has_empty):
       - names: 引用到的变量名集合（非空）。
-      - has_empty: 是否存在「变量名为空」的 Get 节点（删除图输入后会变空，
-        即 SD 日志里的 "Some Get nodes don't have a variable name" / "Empty variable"）。
+      - has_empty: 是否存在「变量名为空」的 Get 节点（"Empty variable"）。
+    可选 valid_ids：图的输入参数 id 集合。提供时，变量名既不在图输入、也不是图里
+    存在的局部 Set 变量 → 视为悬空损坏。不提供则只判定空变量名（保守）。
     变量名存在 Get 节点的 `__constant__` 输入属性里（见官方 sample_sbs_parameter_function.py）。
     """
     names = set()
@@ -312,6 +332,7 @@ def _collect_get_var_status(func_graph):
         n = len(fnodes)
     except Exception:
         return names, has_empty
+    set_names = _collect_set_var_names(func_graph)
     for i in range(n):
         try:
             fnode = fnodes[i]
@@ -334,7 +355,36 @@ def _collect_get_var_status(func_graph):
             has_empty = True
         else:
             names.add(s)
+            # 变量名非空，但既不是图输入也不是本图局部 Set 变量 → 悬空引用，算损坏
+            if valid_ids is not None and s not in valid_ids and s not in set_names:
+                has_empty = True
     return names, has_empty
+
+
+def _collect_set_var_names(func_graph):
+    """收集函数图里 Set 节点定义的局部变量名，避免把局部变量误判成悬空。"""
+    out = set()
+    try:
+        fnodes = func_graph.getNodes()
+        for i in range(len(fnodes)):
+            fn = fnodes[i]
+            try:
+                d = fn.getDefinition()
+                did = (d.getId() or "").lower() if d else ""
+            except Exception:
+                did = ""
+            if "set" not in did:
+                continue
+            try:
+                cval = fn.getPropertyValueFromId("__constant__", SDPropertyCategory.Input)
+                s = _strip_quotes(_value_to_str(cval)) or ""
+                if s:
+                    out.add(s)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return out
 
 
 def _reset_dependent_node_params(graph, var_ids):
@@ -378,7 +428,7 @@ def _reset_dependent_node_params(graph, var_ids):
     return reset_count
 
 
-def _reset_broken_node_functions(graph, deleted_ids):
+def _reset_broken_node_functions(graph, deleted_ids, node_ids=None):
     """删除后：扫描全图，把「损坏的 Get 函数」驱动的节点参数重置回常量值。
 
     这是用户要的「扫描 SD Graph、找到这些有警告的参数并重置」思路：删除图输入后，
@@ -392,7 +442,11 @@ def _reset_broken_node_functions(graph, deleted_ids):
     if SDPropertyCategory is None:
         return 0
     deleted = set(deleted_ids or [])
+    only = set(node_ids) if node_ids else None  # 仅重置这些节点；None=全图
+    valid_ids = _graph_input_ids(graph)  # 用于判定悬空 Get（变量名仍在但参数已删）
     reset_count = 0
+    # 全图节点的所有属性类别都可能挂着损坏函数（Input 参数最常见，Output/Annotation 兜底）
+    categories = [SDPropertyCategory.Input, SDPropertyCategory.Output, SDPropertyCategory.Annotation]
     try:
         nodes = graph.getNodes()
         ncount = len(nodes)
@@ -402,25 +456,35 @@ def _reset_broken_node_functions(graph, deleted_ids):
     for i in range(ncount):
         try:
             node = nodes[i]
-            props = node.getProperties(SDPropertyCategory.Input)
-            pcount = len(props)
         except Exception:
             continue
-        for j in range(pcount):
+        if only is not None:
             try:
-                prop = props[j]
-                pg = node.getPropertyGraph(prop)
+                if (node.getIdentifier() or "") not in only:
+                    continue
             except Exception:
-                pg = None
-            if not pg:
                 continue
+        for cat in categories:
             try:
-                names, has_empty = _collect_get_var_status(pg)
-                if has_empty or (names & deleted):
-                    node.deletePropertyGraph(prop)
-                    reset_count += 1
-            except Exception as e:
-                print(f"{_LOG} 重置某损坏节点参数失败（已跳过）: {e}")
+                props = node.getProperties(cat)
+                pcount = len(props)
+            except Exception:
+                continue
+            for j in range(pcount):
+                try:
+                    prop = props[j]
+                    pg = node.getPropertyGraph(prop)
+                except Exception:
+                    pg = None
+                if not pg:
+                    continue
+                try:
+                    names, has_empty = _collect_get_var_status(pg, valid_ids)
+                    if has_empty or (names & deleted):
+                        node.deletePropertyGraph(prop)
+                        reset_count += 1
+                except Exception as e:
+                    print(f"{_LOG} 重置某损坏节点参数失败（已跳过）: {e}")
     return reset_count
 
 
@@ -468,10 +532,171 @@ def delete_exposed_parameters(graph, ids):
     return deleted, failed, reset
 
 
-def repair_broken_node_functions(graph):
-    """扫描全图并重置所有「损坏的 Get 函数」（变量名已空）回常量值，返回重置个数。
+def _node_label(node):
+    """节点显示名：定义标签 + 标识符，便于在图里定位。"""
+    try:
+        ident = node.getIdentifier() or ""
+    except Exception:
+        ident = ""
+    try:
+        d = node.getDefinition()
+        lbl = (d.getLabel() or d.getId()) if d else ""
+    except Exception:
+        lbl = ""
+    return f"{lbl} (id:{ident})" if ident else (lbl or "<未知节点>")
 
-    用途：之前删除暴露参数时没重置节点参数，已经在画布上留下了一堆悬空的 Get 变量
+
+def _is_ghost_instance(node):
+    """判断是否为子图丢失的 Ghost 实例（Cooker 报 Can't find subgraph）。
+
+    子图实例引用的子图（getReferencedResource）丢失时，节点变成 Ghost：
+    引用资源为 None，且拿不到 I/O 定义；cook 报 "Can't find subgraph"。
+    """
+    try:
+        if hasattr(node, "getReferencedResource") and node.getReferencedResource() is not None:
+            return False
+        d = node.getDefinition()
+        if d is None:
+            return True
+        lbl = (d.getLabel() or "").lower()
+        ins = len(d.getProperties(SDPropertyCategory.Input)) if SDPropertyCategory else 0
+        outs = len(d.getProperties(SDPropertyCategory.Output)) if SDPropertyCategory else 0
+        return ("ghost" in lbl) or (ins == 0 and outs == 0)
+    except Exception:
+        return False
+
+
+def collect_broken_nodes(graph):
+    """扫描全图，列出有问题的节点及其警告类型。
+
+    返回 list[dict]: {id, label, prop, warnings} ——
+      - id: 节点标识，用于 Goto / 删除；
+      - prop: 首个损坏属性名（可空）；
+      - warnings: 警告类型列表，如 ["Empty variable", "缺失资源", "未连接输出", "悬挂节点"]。
+    只读，不修改图。
+    """
+    import os as _os
+    out = []
+    if graph is None or SDPropertyCategory is None:
+        return out
+    valid_ids = _graph_input_ids(graph)
+    output_ids = set()
+    try:
+        outs = graph.getOutputNodes()
+        for i in range(len(outs)):
+            output_ids.add(outs[i].getIdentifier())
+    except Exception:
+        pass
+    categories = [SDPropertyCategory.Input, SDPropertyCategory.Output, SDPropertyCategory.Annotation]
+    try:
+        nodes = graph.getNodes()
+        ncount = len(nodes)
+    except Exception as e:
+        print(f"{_LOG} 读取节点失败，跳过损坏节点扫描: {e}")
+        return out
+    for i in range(ncount):
+        try:
+            node = nodes[i]
+            nid = node.getIdentifier() or ""
+        except Exception:
+            continue
+        warnings = []
+        broken_prop = ""
+        # 1) Empty variable / 悬空 Get 函数
+        for cat in categories:
+            try:
+                props = node.getProperties(cat)
+            except Exception:
+                continue
+            for j in range(len(props)):
+                try:
+                    pg = node.getPropertyGraph(props[j])
+                    if not pg:
+                        continue
+                    _, has_empty = _collect_get_var_status(pg, valid_ids)
+                    if has_empty:
+                        broken_prop = props[j].getId()
+                        break
+                except Exception:
+                    continue
+            if broken_prop:
+                break
+        if broken_prop:
+            warnings.append("Empty variable")
+        # 2) 缺失资源：节点引用的资源不存在（外部文件丢失或 pkg:/// 依赖找不到）
+        try:
+            d = node.getDefinition()
+            did = (d.getId() or "").lower() if d else ""
+            res = None
+            if hasattr(node, "getReferencedResource"):
+                res = node.getReferencedResource()
+            if "bitmap" in did or "svg" in did:
+                if res is None:
+                    warnings.append("缺失资源")
+                else:
+                    path = res.getFilePath() if hasattr(res, "getFilePath") else ""
+                    if path and not path.startswith("pkg://") and not _os.path.exists(path):
+                        warnings.append("缺失资源")
+            if "缺失资源" not in warnings and res is not None:
+                path = res.getFilePath() if hasattr(res, "getFilePath") else ""
+                if path and not path.startswith("pkg://") and not _os.path.exists(path):
+                    warnings.append("缺失资源")
+            # 子图实例引用的子图丢失 → Ghost Instance（Can't find subgraph）。
+            # 原子节点（bitmap/svg 等）有 I/O 不会判 ghost；缺子图实例无 I/O 或带 ghost 标签。
+            if "bitmap" not in did and "svg" not in did and _is_ghost_instance(node):
+                warnings.append("缺失子图(Ghost)")
+        except Exception:
+            pass
+        # 3 & 4) 未连接输出 / 悬挂节点
+        try:
+            conn_out = 0
+            for p in node.getProperties(SDPropertyCategory.Output):
+                conn_out += len(node.getPropertyConnections(p))
+            if nid in output_ids:
+                conn_in = sum(len(node.getPropertyConnections(p))
+                              for p in node.getProperties(SDPropertyCategory.Input))
+                if conn_in == 0:
+                    warnings.append("未连接输出")
+            elif conn_out == 0:
+                warnings.append("悬挂节点")
+        except Exception:
+            pass
+        if warnings:
+            out.append({"id": nid, "label": _node_label(node), "prop": broken_prop,
+                        "warnings": warnings})
+    return out
+
+
+def delete_node(graph, node_id):
+    """删除图中指定 id 的节点。返回 (ok, 信息)。包 UndoGroup，可 Ctrl+Z 撤销。"""
+    if graph is None or not node_id:
+        return False, "缺少图或节点 id。"
+    try:
+        node = graph.getNodeFromId(node_id)
+        if node is None:
+            return False, f"未找到节点: {node_id}"
+        with _undo_group("MaxSDPlugin 删除节点"):
+            graph.deleteNode(node)
+        return True, ""
+    except Exception as e:
+        return False, f"删除失败: {e}"
+
+
+
+def goto_node(graph, node_id, app=None):
+    """在图视图里定位/选中指定节点。返回 (ok, 信息)。
+
+    跨版本逻辑统一收敛到 sdcompat.focus_node（多策略探测 + 优雅降级），
+    这里只做转发，避免在功能模块里硬编码版本脆弱的接口。
+    """
+    return sdcompat.focus_node(graph, node_id, app)
+
+
+def repair_broken_node_functions(graph, node_ids=None):
+    """扫描全图并重置「损坏的 Get 函数」（变量名已空）回常量值，返回重置个数。
+
+    node_ids=None 表示修全图；传入节点 id 列表则只修这些节点。
+    用途：之前删除暴露参数时没重置节点参数，已经在画布上留下一堆悬空的 Get 变量
     （SD 日志里的 "Empty variable" / "Some Get nodes don't have a variable name"）。
     本函数直接扫描修复这些参数，无需再次删除。包在 UndoGroup 里，可 Ctrl+Z 撤销。
     """
@@ -480,7 +705,7 @@ def repair_broken_node_functions(graph):
     reset = 0
     try:
         with _undo_group("MaxSDPlugin 重置损坏的节点函数"):
-            reset = _reset_broken_node_functions(graph, [])
+            reset = _reset_broken_node_functions(graph, [], node_ids=node_ids)
     except Exception as e:
         print(f"{_LOG} 重置损坏函数时出现异常，已尽量完成: {e}")
     print(f"{_LOG} 重置损坏函数完成：共重置 {reset} 个节点参数")

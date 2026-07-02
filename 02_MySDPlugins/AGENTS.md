@@ -1,7 +1,7 @@
 # AGENTS.md — AI 协作者指南（02_MySDPlugins）
 
 > 本文件是给 **AI 编码助手**（Copilot / Claude / Cursor 等）读的操作手册。
-> 人类开发者请先看本目录 [README.md](README.md) 与插件计划 [MaxSDPlugins/TodoList.md](MaxSDPlugins/TodoList.md)。
+> 人类开发者请先看本目录 [README.md](README.md) 与插件计划 [MaxSDPlugins/ReleaseNote.md](MaxSDPlugins/ReleaseNote.md)。
 >
 > **当你（AI）接到"给 MaxSDPlugin 添加新功能"类指令时，必须先完整读完本文件，再动手。**
 
@@ -33,8 +33,11 @@
 
 ```
 MaxSDPlugins/
-├─ MaxSDPlugin.py                  ← 唯一插件入口：initializeSDPlugin/uninitializeSDPlugin + 菜单注册
-├─ README.md / TodoList.md         ← 文档与功能计划
+├─ MaxSDPlugin.py                  ← 唯一插件入口：initializeSDPlugin/uninitializeSDPlugin + 菜单骨架/重载机制
+├─ menu.py                         ← 数据驱动菜单：build_menu 定义所有菜单项（可热重载）
+├─ _version.py                     ← 版本号单一来源（可热重载）
+├─ sdcompat.py                     ← 跨版本(SD16/SD13) SD+Qt 接口兼容层（唯一真源，无相对 import，可被导出打包）
+├─ README.md / ReleaseNote.md       ← 文档与功能计划
 │
 ├─ <feature_name>/                 ← 每个功能一个文件夹（snake_case）
 │  ├─ __init__.py                  ← 暴露功能入口函数（如 run / show_window）
@@ -47,7 +50,7 @@ MaxSDPlugins/
    └─ __init__.py
 ```
 
-- **根目录（MaxSDPlugins/）只放入口文件与文档**，不放独立业务 `.py`。
+- **根目录（MaxSDPlugins/）只放入口文件、菜单/版本等框架文件与文档**，业务功能放各功能文件夹，不在根目录放独立业务 `.py`。
 - 每个功能文件夹必须有 `__init__.py`，让它成为可 import 的包。
 - `shared/`：仅插件内部、跨功能共用的小工具；`../utilities/`：更通用、可能脱离本插件复用的工具。拿不准放 `shared/`。
 
@@ -74,6 +77,10 @@ MaxSDPlugins/
   ```
 - **菜单创建必须幂等**：先遍历已存在的菜单项判断有没有同名 `MaxSDPlugin`，有就复用，避免"越加载菜单越多"。
 - **`uninitializeSDPlugin()` 必须把本插件加的菜单/动作/事件/定时器全部清理干净**，并把模块级引用置 `None`。
+- **菜单数据驱动（避免每次改菜单都动入口）**：入口只创建顶级 `MaxSDPlugin` 菜单骨架，再调用可热重载的 `MaxSDPlugins/menu.py` 的 `build_menu(menu, main_win, ctx)` 填充所有菜单项（版本号、关于、重载、各功能分类）。
+  - 新增/修改菜单项**只改 `menu.py`**，随 Unload→Load 热重载，**不需重启 SD、不动入口**。新增功能分类在 `menu.py` 用 `_add_category(...)` 加一行即可。
+  - 入口通过 `ctx` 注入回调（`get_version` / `show_about` / `reload_plugin` / `keep`）。版本号存于热重载的 `_version.py`，入口 `__version__` 仅作回退。
+  - 只有改入口 `MaxSDPlugin.py` / `__init__.py` 才需重启 SD；其余（menu/output/debug/_version）走「重载插件（Unload→Load）」菜单即可。
 
 ### 1.4 SD / PySide 环境约定
 
@@ -107,14 +114,37 @@ MaxSDPlugins/
 | 入口文件 `MaxSDPlugin.py` / `__init__.py` | ❌ 不能 | **必须重启 SD**（SD 攥着旧模块对象，运行时无法替换入口自身） |
 | 功能子模块（`<feature>/` 下的文件） | ✅ 能 | Plugin Manager **Unload → Load** 即可，无需重启 |
 
-**实现机制（已落地，勿破坏）**：[MaxSDPlugins/MaxSDPlugin.py](MaxSDPlugins/MaxSDPlugin.py) 的 `_reload_feature_modules()` 在**加载时**（`initializeSDPlugin()` 开头）把功能子模块从 `sys.modules` 删除，使随后的延迟 `import` 从磁盘重新读取。
+**实现机制（已落地，勿破坏）**：[MaxSDPlugins/MaxSDPlugin.py](MaxSDPlugins/MaxSDPlugin.py) 的 `_reload_feature_modules()` 在**加载时**（`initializeSDPlugin()` 开头）把功能子模块从 `sys.modules` 删除，使随后的延迟 `import` 从磁盘重新读取。**采用动态策略**：清掉本包 `MaxSDPlugins.*` 下所有子模块，唯独保留包根与入口模块（MaxSDPlugin / __init__）。因此**新增功能子包无需再登记任何名单**。
 
 **硬性约定**：
 
 - **只在「加载时」清缓存，绝不在「卸载时」清**——卸载时 SD 不会重新 import，清了也无效，还可能破坏相对导入。
 - **只清功能子模块，绝不清包本身（`MaxSDPlugins`）和入口模块（`MaxSDPlugin`）**——否则 `from .<feature> import …` 会因父包缺失而出错。
-- **新增功能子包后，必须在 `_reload_feature_modules()` 的 `feature_prefixes` 里登记一行**（如 `pkg + ".output"`），否则该功能无法热重载。
+- **新增功能子包无需动入口**：`_reload_feature_modules()` 动态清本包下所有子模块，放进包目录即自动热重载（只需在 `menu.py` 用 `_add_category` 挂菜单）。
 - **保持入口文件极薄、稳定**：只做菜单注册 + 子模块加载，真正逻辑全放进功能子模块，最大化可热重载范围、最小化重启次数。
+
+---
+
+### 1.7 跨版本（SD16 / SD13）兼容与导出工具规则
+
+OutputTools 的「输出脚本」会把功能模块打包成**一个独立 .py** 给宿主工具集成。该产物需在 **SD16（PySide6/Qt6）与 SD13（PySide2/Qt5）两个版本上都能直接运行**，因此有以下硬性约定：
+
+- **版本脆弱的 SD/Qt 接口，只走集中式兼容层 [sdcompat.py](MaxSDPlugins/sdcompat.py)。** 功能模块**禁止**再硬编码 `app.getQtForPythonUIMgr()` / `app.getUIMgr()` / `focusGraphNode(...)` 等；改为 `from .. import sdcompat` 后调 `sdcompat.get_current_graph()` / `sdcompat.focus_node()` / `sdcompat.get_main_window()`。`goto_node` 等只做转发。
+- **`sdcompat` 三层保障**：能力探测（`hasattr` + 遍历多候选管理器/方法名）→ 多策略降级（定位不了就选中高亮，再不行给提示）→ 永不抛异常 + 精确日志。**新差异只在 `sdcompat.py` 加候选，一处维护。**
+- **导出物必须「双版本通用」，不做 PySide 静态字符串替换。** 历史上的 `PySide6 -> PySide2` 整体替换会把模块里的 `try PySide6 except PySide2` 回退写死成单版本，**已废弃，禁止再用**。
+- **导出时 `sdcompat.py` 始终被打包**为 `_maxsd_bundle.root_sdcompat`，**最先 exec 并调 `qt_patch()`**（抹平 `QAction` 位置、`exec/exec_`），随后功能模块的 `from .. import sdcompat` 自动改写到它。见 [output_tools.py](MaxSDPlugins/output_tools/output_tools.py) 的 `export_modules`。
+- **写兼容前先查本地查找表**：差异清单见 [docs/SD_API_Compatibility.md](docs/SD_API_Compatibility.md) 与 [docs/sd_api_compat.json](docs/sd_api_compat.json)。**优先查这份本地备份**，不要凭记忆猜 SD13 接口名。
+- **新发现一处差异，三处同步**：(1) `sdcompat.py` 加候选/策略；(2) 查找表 md+json；(3) 若 `sdcompat` 无法覆盖的极端情况才在调用处 `hasattr` 守卫。
+
+已知差异速查（完整见查找表）：
+
+| 主题 | SD16 / PySide6 | SD13 / PySide2 | 处理方式 |
+|---|---|---|---|
+| Qt 绑定 | PySide6 / Qt6.8 | PySide2 / Qt5 | 模块 `try PySide6 except PySide2`；导出物不静态替换 |
+| `QAction` 所在模块 | `QtGui.QAction` | `QtWidgets.QAction` | `sdcompat.qt_patch()` 双向补全 |
+| 模态执行 | `dialog.exec()` | `dialog.exec_()` | `sdcompat.qt_patch()` 互为别名 |
+| 枚举作用域 | `Qt.UserRole`（非作用域仍可用） | `Qt.UserRole` | 用非作用域写法，两版通用 |
+| 图视图定位 | `SDUIMgr.getGraphViewIDCount/focusGraphNode` | **不存在** | `sdcompat.focus_node` 多策略探测降级 |
 
 ---
 
@@ -173,7 +203,7 @@ menu.addAction(action)
 
 确保该动作在 `uninitializeSDPlugin()` 的清理范围内。
 
-> **若新建了功能子包**：记得在 `_reload_feature_modules()` 的 `feature_prefixes` 里登记该子包前缀（见 §1.6），否则它无法通过 Plugin Manager 热重载，每次改动都得重启 SD。
+> **若新建了功能子包**：无需再动入口。`_reload_feature_modules()` 会动态清本包下所有子模块，放进包目录并在 `menu.py` 挂上菜单即可热重载（见 §1.6）。
 
 ### 步骤 4：编写模块 README
 
@@ -185,7 +215,8 @@ menu.addAction(action)
 
 1. **[MaxSDPlugins/README.md](MaxSDPlugins/README.md)**：菜单项列表 + 功能说明小节 + 目录结构。
 2. **本目录 [README.md](README.md)**：若文件夹结构有变，同步目录树。
-3. **[MaxSDPlugins/TodoList.md](MaxSDPlugins/TodoList.md)**：把对应计划项标记为已完成（如划掉或加 ✅）。
+3. **[MaxSDPlugins/ReleaseNote.md](MaxSDPlugins/ReleaseNote.md)**：把对应计划项标记为已完成（如划掉或加 ✅）。
+4. **升版本 + 写更新记录（强制）**：每次功能变更必须升 [MaxSDPlugins/MaxSDPlugin.py](MaxSDPlugins/MaxSDPlugin.py) 顶部的 `__version__`（语义化：修 bug 升 patch、加功能升 minor、破坏兼容升 major），并在 [MaxSDPlugins/ReleaseNote.md](MaxSDPlugins/ReleaseNote.md) 顶部「更新记录」区追加**一行**：`日期 · vX.Y.Z · 改动 · 影响范围 · 是否需重启 SD`。
 
 ### 步骤 6：编译 / 加载验证
 
@@ -303,7 +334,7 @@ SD 插件没有独立 CLI 构建，验证分两层：
 - [ ] `initializeSDPlugin` / `uninitializeSDPlugin` 仅存在于 `MaxSDPlugin.py`，菜单注册唯一
 - [ ] 新功能暴露了 `run()` / `show_window()` 等对外入口，并被入口文件挂到 `MaxSDPlugin` 菜单
 - [ ] `uninitializeSDPlugin()` 已清理新加的菜单动作 / 信号 / 引用
-- [ ] 若新增功能子包，已在 `_reload_feature_modules()` 的 `feature_prefixes` 登记前缀（§1.6 热重载）
+- [ ] 新增功能子包无需动入口（`_reload_feature_modules()` 动态热重载全包，见 §1.6），只需在 `menu.py` 挂菜单
 - [ ] 使用 PySide6（或保留双兼容写法）；菜单创建幂等；模块级保存了 QMenu/QAction 引用
 - [ ] 所有 `sd` / Qt 调用包 `try/except`，日志带 `[MaxSDPlugin]` 前缀
 - [ ] 含中文文件有 `# -*- coding: utf-8 -*-`
@@ -311,7 +342,8 @@ SD 插件没有独立 CLI 构建，验证分两层：
 - [ ] `<feature_name>/README.md` 已按 §3 模板创建
 - [ ] [MaxSDPlugins/README.md](MaxSDPlugins/README.md) 的菜单/功能/目录结构已同步
 - [ ] 本目录 [README.md](README.md) 目录树（如有变动）已同步
-- [ ] [MaxSDPlugins/TodoList.md](MaxSDPlugins/TodoList.md) 对应计划项已标记完成
+- [ ] [MaxSDPlugins/ReleaseNote.md](MaxSDPlugins/ReleaseNote.md) 对应计划项已标记完成
+- [ ] 已升 `__version__`（语义化）并在 ReleaseNote 顶部「更新记录」追加一行（日期+改动+影响范围+是否需重启 SD）
 - [ ] 代码符合 §4 全部质量基线
 - [ ] `Python Lint Check` 任务 / `get_errors` 无语法错误（`import sd` 等环境缺失告警可接受）
 - [ ] 交付前 `grep_search` 验证「新功能中文名 / 新文件夹名 / 新菜单项」各至少在 README 命中一次

@@ -10,13 +10,17 @@
 ├── AGENTS.md            # AI 协作者指南（开发本插件前必读）
 ├── MaxSDPlugins/        # 插件开发主目录
 │   ├── __init__.py      # 插件包入口（转发 initialize/uninitialize）
-│   ├── MaxSDPlugin.py   # 插件入口逻辑：MaxSDPlugin 菜单 + 版本信息 + Output 分类
+│   ├── MaxSDPlugin.py   # 插件入口逻辑：MaxSDPlugin 菜单 + 版本信息 + Output / Debug 分类
 │   ├── output/          # Output 功能分类（曝光参数等）
 │   │   ├── __init__.py
 │   │   ├── exposed_parameters_window.py  # 曝光参数对话框 UI
 │   │   ├── output_data.py                # 枚举参数 + OutputData 读写
 │   │   └── README.md
-│   └── TodoList.md      # 插件功能计划清单
+│   ├── debug/           # Debug 功能分类（依赖/发布警告检查）
+│   │   ├── __init__.py
+│   │   ├── check_dependencies.py         # 发布警告扫描 + UI
+│   │   └── README.md
+│   └── ReleaseNote.md      # 插件功能计划清单
 ├── utilities/           # 自己积累的工具脚本（可复用函数）
 └── docs/                # 基础概念备注 / 官方文档摘录 / 开发日志
     ├── 官方文档          # 官方文档相关记录
@@ -31,13 +35,15 @@
 ```
 MaxSDPlugin
 ├─ 关于 / 版本信息
-└─ Output
-   └─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存・导出・加载 OutputData（删除重置为 TODO）
+├─ Output
+│  └─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（删除重置为 TODO）
+└─ Debug
+   └─ Check Dependencies # 扫描发布 sbsar 可能警告的节点（损坏函数/缺失资源/未连接输出/悬挂）
 ```
 
 ## 📝 插件功能计划（MaxSDPlugin）
 
-详见 [MaxSDPlugins/TodoList.md](MaxSDPlugins/TodoList.md)，主要规划包括：
+详见 [MaxSDPlugins/ReleaseNote.md](MaxSDPlugins/ReleaseNote.md)，主要规划包括：
 
 - 显示插件版本 / 软件版本 / PySide 版本
 - SD 窗口布局重置、清理无效依赖

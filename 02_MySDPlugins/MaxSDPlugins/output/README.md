@@ -18,7 +18,8 @@
   - 整个删除（重置 + 删除）包在同一个 `SDHistoryUtils.UndoGroup` 里，可在 SD 中按 **Ctrl+Z** 一次性撤销。
   - 删除前**自动备份**一份 OutputData 到 `.sbs` 同目录，便于回滚。
   - 操作前有二次确认对话框。
-- **修复损坏函数**：扫描当前图，把之前删除暴露参数时残留的、变量名为空的 Get 函数重置回常量值（修复已经损坏的图，无需再次删除）。同样包 UndoGroup 可撤销。
+- **修复损坏函数**：勾选下方损坏节点列表后只修复勾选项；**未勾选则修全图**——把变量名为空的 Get 函数重置回常量值（修复已经损坏的图）。同样包 UndoGroup 可撤销。
+- **画布损坏节点列表**：面板下方列出画布上报 Empty variable 的损坏节点（列表为空也能看到），自带「刷新 / 全选 / 全不选 / 修复损坏函数」按钮；条目可勾选，双击或右键「Goto」可在图中定位该节点（`SDUIMgr.focusGraphNode`）。
 - **加载历史…**：读取一个历史 `OutputData.json`，把其中记录的值**应用回当前图中仍然存在的同名参数**（`graph.setPropertyValue()`，同样包 UndoGroup 可撤销）。完成后弹窗汇总「已还原 / 已不存在无法还原 / 类型不支持」三类计数。
 
 ---
@@ -40,6 +41,8 @@ output/
 | `output_data.group_parameters(params)` | 组织成「分类 → 分组 → 参数」结构供 UI 渲染 |
 | `output_data.delete_exposed_parameters(graph, ids)` | 先 `deletePropertyGraph` 重置依赖节点参数，再 `deleteProperty` 取消暴露，删后再扫一遍兜底；包 UndoGroup，返回 (deleted, failed, reset) |
 | `output_data.repair_broken_node_functions(graph)` | 扫描全图重置变量名已空的损坏 Get 函数，返回重置个数；包 UndoGroup |
+| `output_data.collect_broken_nodes(graph)` | 只读列出画布上报 Empty variable 的损坏节点 → [{id,label,prop}] |
+| `output_data.goto_node(graph, id)` | 用 `SDUIMgr.focusGraphNode` 把视图居中到该节点 |
 | `output_data.apply_output_data(graph, data)` | 把 OutputData 的值应用回现存参数，返回 {restored, missing, skipped} |
 | `output_data.get_default_output_data_path(graph)` | 推算 `.sbs` 同目录的 `OutputData.json` 路径 |
 | `output_data.build_output_data(graph, selected_ids)` | 构建 OutputData 快照字典 |
@@ -83,6 +86,7 @@ OutputData JSON 结构：
 - `graph.setPropertyValue(prop, value)` — 写回参数值（加载应用）
 - `SDHistoryUtils.UndoGroup(name)` — 把破坏性操作包成可撤销事务
 - `SDValueSerializer.sToString(value)` — 值转字符串（保存快照用）
+- `app.getUIMgr().focusGraphNode(viewID, node)` — Goto 定位损坏节点（配合 getGraphViewIDCount/At）
 - `graph.getPackage().getFilePath()` — 定位 `.sbs` 磁盘路径
 
 ---

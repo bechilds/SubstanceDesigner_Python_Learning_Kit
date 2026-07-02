@@ -62,48 +62,70 @@ if QtWidgets is not None:
             self._tree.setColumnWidth(1, 160)
             layout.addWidget(self._tree, 1)
 
-            # 选择相关按钮
-            sel_row = QtWidgets.QHBoxLayout()
+            # —— 曝光参数列表专属按钮：刷新 / 全选 / 全不选 / 删除勾选 / 缓存 / 导出 / 加载 ——
+            exp_row = QtWidgets.QHBoxLayout()
             self._btn_refresh = QtWidgets.QPushButton("刷新", self)
             self._btn_check_all = QtWidgets.QPushButton("全选", self)
             self._btn_uncheck_all = QtWidgets.QPushButton("全不选", self)
+            self._btn_delete = QtWidgets.QPushButton("删除勾选项", self)
+            self._btn_cache = QtWidgets.QPushButton("缓存到当前目录", self)
+            self._btn_export = QtWidgets.QPushButton("导出…", self)
+            self._btn_load = QtWidgets.QPushButton("加载历史…", self)
             self._btn_refresh.clicked.connect(self._refresh)
             self._btn_check_all.clicked.connect(lambda: self._set_all_checked(True))
             self._btn_uncheck_all.clicked.connect(lambda: self._set_all_checked(False))
-            for b in (self._btn_refresh, self._btn_check_all, self._btn_uncheck_all):
-                sel_row.addWidget(b)
-            sel_row.addStretch(1)
-            layout.addLayout(sel_row)
-
-            # OutputData 相关按钮
-            data_row = QtWidgets.QHBoxLayout()
-            self._btn_cache = QtWidgets.QPushButton("缓存到当前目录", self)
-            self._btn_export = QtWidgets.QPushButton("导出 OutputData…", self)
-            self._btn_load = QtWidgets.QPushButton("加载历史…", self)
+            self._btn_delete.clicked.connect(self._delete_checked)
             self._btn_cache.clicked.connect(self._cache)
             self._btn_export.clicked.connect(self._export)
             self._btn_load.clicked.connect(self._load_history)
-            for b in (self._btn_cache, self._btn_export, self._btn_load):
-                data_row.addWidget(b)
-            data_row.addStretch(1)
-            layout.addLayout(data_row)
+            for b in (self._btn_refresh, self._btn_check_all, self._btn_uncheck_all,
+                      self._btn_delete, self._btn_cache, self._btn_export, self._btn_load):
+                exp_row.addWidget(b)
+            exp_row.addStretch(1)
+            layout.addLayout(exp_row)
 
-            # 操作 / 关闭按钮
-            act_row = QtWidgets.QHBoxLayout()
-            self._btn_delete = QtWidgets.QPushButton("删除勾选项（取消暴露）", self)
-            self._btn_delete.clicked.connect(self._delete_checked)
-            self._btn_repair = QtWidgets.QPushButton("修复损坏函数", self)
+            # 损坏节点（画布上报 Empty variable 的节点）：可勾选；双击/右键 Goto 定位
+            self._broken_label = QtWidgets.QLabel(self)
+            self._broken_label.setWordWrap(True)
+            layout.addWidget(self._broken_label)
+            self._broken_tree = QtWidgets.QTreeWidget(self)
+            self._broken_tree.setHeaderLabels(["损坏节点", "损坏属性", "警告类型"])
+            self._broken_tree.setColumnWidth(0, 280)
+            self._broken_tree.setColumnWidth(1, 140)
+            self._broken_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            self._broken_tree.customContextMenuRequested.connect(self._broken_context_menu)
+            self._broken_tree.itemDoubleClicked.connect(lambda *_: self._goto_broken())
+            layout.addWidget(self._broken_tree, 1)
+
+            # —— 画布损坏节点列表专属按钮：刷新 / 全选 / 全不选 / 重置函数 ——
+            brk_row = QtWidgets.QHBoxLayout()
+            self._btn_brk_refresh = QtWidgets.QPushButton("刷新", self)
+            self._btn_brk_check_all = QtWidgets.QPushButton("全选", self)
+            self._btn_brk_uncheck_all = QtWidgets.QPushButton("全不选", self)
+            self._btn_repair = QtWidgets.QPushButton("重置函数", self)
             self._btn_repair.setToolTip(
-                "扫描当前图，把之前删除暴露参数后残留的、变量名为空的 Get 函数重置回常量值。"
+                "把勾选的损坏节点重置回常量值；未勾选则修复全图。可在 SD 中 Ctrl+Z 撤销。"
             )
+            self._btn_del_node = QtWidgets.QPushButton("删除当前节点", self)
+            self._btn_del_node.setToolTip("删除当前选中的损坏节点（可在 SD 中 Ctrl+Z 撤销）。")
+            self._btn_brk_refresh.clicked.connect(self._refresh_broken)
+            self._btn_brk_check_all.clicked.connect(lambda: self._set_all_broken_checked(True))
+            self._btn_brk_uncheck_all.clicked.connect(lambda: self._set_all_broken_checked(False))
             self._btn_repair.clicked.connect(self._repair_broken)
+            self._btn_del_node.clicked.connect(self._delete_current_node)
+            for b in (self._btn_brk_refresh, self._btn_brk_check_all,
+                      self._btn_brk_uncheck_all, self._btn_repair, self._btn_del_node):
+                brk_row.addWidget(b)
+            brk_row.addStretch(1)
+            layout.addLayout(brk_row)
+
+            # 关闭
+            close_row = QtWidgets.QHBoxLayout()
+            close_row.addStretch(1)
             self._btn_close = QtWidgets.QPushButton("关闭", self)
             self._btn_close.clicked.connect(self.close)
-            act_row.addWidget(self._btn_delete)
-            act_row.addWidget(self._btn_repair)
-            act_row.addStretch(1)
-            act_row.addWidget(self._btn_close)
-            layout.addLayout(act_row)
+            close_row.addWidget(self._btn_close)
+            layout.addLayout(close_row)
 
         # ---------------- 数据填充 ----------------
         def _refresh(self):
@@ -121,6 +143,93 @@ if QtWidgets is not None:
             )
             self._fill_tree(grouped)
             self._tree.expandAll()
+            self._fill_broken(graph)
+
+        def _refresh_broken(self):
+            """只刷新画布损坏节点列表（不动曝光参数树）。"""
+            graph = od.get_current_graph()
+            if graph is None:
+                self._broken_tree.clear()
+                self._broken_label.setText("未找到当前图。")
+                return
+            self._fill_broken(graph)
+
+        def _fill_broken(self, graph):
+            """扫描并列出画布上有警告的节点（可勾选），含警告类型列。"""
+            self._broken_tree.clear()
+            broken = od.collect_broken_nodes(graph)
+            if broken:
+                self._broken_label.setText(
+                    f"画布损坏节点：{len(broken)} 个 —— 勾选后“重置”，选中后可“删除当前节点”，双击/右键 Goto 定位")
+            else:
+                self._broken_label.setText("画布损坏节点：0 个")
+            for b in broken:
+                wtypes = "、".join(b.get("warnings", []))
+                it = QtWidgets.QTreeWidgetItem(
+                    self._broken_tree, [b["label"], b.get("prop", ""), wtypes])
+                it.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable)
+                it.setCheckState(0, QtCore.Qt.Unchecked)
+                it.setData(0, self._ID_ROLE, b["id"])
+
+        def _delete_current_node(self):
+            """删除当前选中的损坏节点。可在 SD 中 Ctrl+Z 撤销。"""
+            it = self._broken_tree.currentItem()
+            if it is None:
+                self._warn("请先在列表中选中一个节点。")
+                return
+            graph = od.get_current_graph()
+            if graph is None:
+                self._warn("未找到当前图。")
+                return
+            nid = it.data(0, self._ID_ROLE)
+            confirm = QtWidgets.QMessageBox.question(
+                self, "删除节点",
+                f"将从图中删除节点：\n{it.text(0)}\n\n可在 SD 中按 Ctrl+Z 撤销。是否继续？",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if confirm != QtWidgets.QMessageBox.Yes:
+                return
+            ok, msg = od.delete_node(graph, nid)
+            if ok:
+                self._refresh()
+            else:
+                self._warn(msg)
+
+        def _set_all_broken_checked(self, checked):
+            state = QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked
+            for i in range(self._broken_tree.topLevelItemCount()):
+                self._broken_tree.topLevelItem(i).setCheckState(0, state)
+
+        def _checked_broken_ids(self):
+            ids = []
+            for i in range(self._broken_tree.topLevelItemCount()):
+                it = self._broken_tree.topLevelItem(i)
+                if it.checkState(0) == QtCore.Qt.Checked:
+                    ids.append(it.data(0, self._ID_ROLE))
+            return ids
+
+        def _broken_context_menu(self, pos):
+            it = self._broken_tree.itemAt(pos)
+            if it is None:
+                return
+            self._broken_tree.setCurrentItem(it)
+            menu = QtWidgets.QMenu(self)
+            menu.addAction("Goto（在图中定位）").triggered.connect(self._goto_broken)
+            menu.addAction("删除当前节点").triggered.connect(self._delete_current_node)
+            menu.exec(self._broken_tree.viewport().mapToGlobal(pos))
+
+        def _goto_broken(self):
+            it = self._broken_tree.currentItem()
+            if it is None:
+                return
+            graph = od.get_current_graph()
+            if graph is None:
+                self._warn("未找到当前图。")
+                return
+            ok, msg = od.goto_node(graph, it.data(0, self._ID_ROLE))
+            if not ok:
+                self._warn(msg)
 
         def _fill_tree(self, grouped):
             """grouped: [(category_label, [(group_name, [param,...]), ...]), ...]。"""
@@ -302,28 +411,30 @@ if QtWidgets is not None:
             self._info("\n".join(msg))
 
         def _repair_broken(self):
-            """扫描当前图，重置之前删除暴露参数后残留的、变量名为空的损坏 Get 函数。"""
+            """重置函数：勾选了节点就只重置这些；未勾选则重置全图。可 Ctrl+Z 撤销。"""
             graph = od.get_current_graph()
             if graph is None:
                 self._warn("未找到当前图。")
                 return
+            ids = self._checked_broken_ids()
+            scope = f"勾选的 {len(ids)} 个节点" if ids else "全图所有损坏节点"
             confirm = QtWidgets.QMessageBox.question(
                 self,
-                "修复损坏函数",
-                "将扫描当前图，把变量名为空的 Get 函数重置回常量值"
-                "（即修复之前删除暴露参数后残留的悬空引用）。\n\n"
+                "重置函数",
+                f"将把{scope}里损坏的 Get 函数重置回常量值"
+                "（修复 Empty variable 悬空引用）。\n\n"
                 "操作可在 SD 中按 Ctrl+Z 撤销。是否继续？",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No,
             )
             if confirm != QtWidgets.QMessageBox.Yes:
                 return
-            reset = od.repair_broken_node_functions(graph)
+            reset = od.repair_broken_node_functions(graph, node_ids=ids or None)
             self._refresh()
             if reset:
                 self._info(f"已重置 {reset} 个损坏的节点参数（恢复常量）。\n\n如需撤销，请在 SD 中按 Ctrl+Z。")
             else:
-                self._info("未发现需要修复的损坏 Get 函数。")
+                self._info("未发现需要重置的损坏 Get 函数。")
 
         # ---------------- 小工具 ----------------
         def _info(self, msg):

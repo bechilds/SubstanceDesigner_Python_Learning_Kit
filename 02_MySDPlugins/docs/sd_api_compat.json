@@ -1,0 +1,91 @@
+{
+  "_comment": "SD16 vs SD13 API 差异查找表（机器可读）。导出/兼容相关改动前先查本表，不要凭记忆猜 SD13 接口。新增差异时同步更新 SD_API_Compatibility.md 与 MaxSDPlugins/sdcompat.py。",
+  "schema_version": 2,
+  "mechanism": {
+    "layer": "MaxSDPlugins/sdcompat.py",
+    "principle": "集中式兼容层：能力探测(hasattr/多候选管理器与方法名) + 多策略降级 + 永不抛异常 + 精确日志。所有版本脆弱的 SD/Qt 接口只走它。",
+    "bundled_as": "_maxsd_bundle.root_sdcompat（OutputTools 导出时自动打包，最先 exec 并调 qt_patch()）",
+    "used_by": "功能模块 from .. import sdcompat；导出时自动改写为 from _maxsd_bundle import root_sdcompat as sdcompat"
+  },
+  "last_updated": "2026-07-01",
+  "versions": {
+    "SD16": { "app": "Adobe Substance 3D Designer 16.0.1", "python": "3.13.x", "pyside": "PySide6", "qt": "6.8.x" },
+    "SD14_15": { "app": "Substance 3D Designer 14.0 - 15.x", "pyside": "PySide6", "qt": "6.5.x" },
+    "SD13": { "app": "Substance Designer 13.x", "pyside": "PySide2", "qt": "5.15.x" }
+  },
+  "sd13_ui_managers": {
+    "_comment": "SD13 实测（app.getX()->dir 去掉 __ 前缀）。关键结论：SD13 只有 getXxxSelection 读取接口，没有 focusGraphNode / getGraphViewIDCount / setCurrentGraphSelection 等 focus/set 写入接口 -> 无法程序化定位/选中节点，Goto 只能降级为回显节点标识。SD16/SD14 才有 focusGraphNode。",
+    "getSDUIMgr": "不存在（SD13 无此方法）",
+    "getQtForPythonUIMgr": {
+      "type": "QtForPythonUIMgrWrapper",
+      "methods": ["addActionToExplorerToolbar", "addActionToGraphViewToolbar", "addToolbarToGraphView", "convertSDTextureToQImage", "deleteMenu", "findMenuFromObjectName", "getCurrentGraph", "getCurrentGraphSelectedNodes", "getCurrentGraphSelectedObjects", "getCurrentGraphSelection", "getCurrentGraphSelectionFromGraphViewID", "getExplorerSelection", "getGraphFromGraphViewID", "getGraphSelectedNodesFromGraphViewID", "getGraphSelectedObjectsFromGraphViewID", "getMainWindow", "newDockWidget", "newMenu", "registerExplorerCreatedCallback", "registerExplorerSelectionChangedCallback", "registerGraphViewCreatedCallback", "unregisterCallback"]
+    },
+    "getUIMgr": {
+      "type": "SDUIMgr",
+      "methods": ["addActionToExplorerToolbar", "addActionToGraphViewToolbar", "addToolbarToGraphView", "convertSDTextureToQImage", "deleteMenu", "findMenuFromObjectName", "getClassName", "getCurrentGraph", "getCurrentGraphSelectedNodes", "getCurrentGraphSelectedObjects", "getCurrentGraphSelection", "getCurrentGraphSelectionFromGraphViewID", "getExplorerSelection", "getGraphFromGraphViewID", "getGraphSelectedNodesFromGraphViewID", "getGraphSelectedObjectsFromGraphViewID", "getMainWindowPtr", "newDockWidget", "newMenu", "registerExplorerCreatedCallback", "registerExplorerSelectionChangedCallback", "registerGraphViewCreatedCallback", "release", "unregisterCallback"]
+    },
+    "conclusions": {
+      "current_graph": "getQtForPythonUIMgr().getCurrentGraph() 可用（两个管理器都有）",
+      "main_window": "QtForPythonUIMgr.getMainWindow() 可用；SDUIMgr 只有 getMainWindowPtr",
+      "focus_or_select_node": "无官方 focusGraphNode / getGraphViewIDCount / setCurrentGraphSelection / selectNode(s)。但 SDNode.getPosition() 可用，且图坐标与 QGraphicsScene 坐标 1:1 -> Goto 改走 Qt 层 fitInView 缩放居中（sdcompat._try_center_on_node），已实现跳转，效果接近 F 键。",
+      "read_selection_only": "getCurrentGraphSelection / getCurrentGraphSelectedNodes 等仅为读取（getter），无对应 setter"
+    }
+  },
+  "differences": [
+    {
+      "id": "qt-binding",
+      "topic": "Qt 绑定 / 导入",
+      "sd16": "from PySide6 import QtWidgets, QtCore, QtGui",
+      "sd13": "from PySide2 import QtWidgets, QtCore, QtGui",
+      "strategy": "runtime-fallback",
+      "rule": "模块用 `try: from PySide6 ... except: from PySide2 ...`。导出物绝不做 PySide6->PySide2 静态字符串替换（会写死单版本）。",
+      "auto_shim": false
+    },
+    {
+      "id": "qaction-location",
+      "topic": "QAction 所在模块",
+      "sd16": "QtGui.QAction",
+      "sd13": "QtWidgets.QAction",
+      "strategy": "runtime-patch",
+      "rule": "运行时双向补全：QtWidgets 缺 QAction 时取自 QtGui，反之亦然。",
+      "auto_shim": true
+    },
+    {
+      "id": "modal-exec",
+      "topic": "对话框/菜单模态执行",
+      "sd16": "dialog.exec() / menu.exec(pos)",
+      "sd13": "dialog.exec_() / menu.exec_(pos)",
+      "strategy": "runtime-patch",
+      "rule": "对 QMenu/QDialog/QApplication/QMessageBox/QFileDialog/QInputDialog 让 exec 与 exec_ 互为别名。",
+      "auto_shim": true
+    },
+    {
+      "id": "enum-scope",
+      "topic": "枚举作用域",
+      "sd16": "Qt.UserRole / Qt.Checked（非作用域仍可用，作用域形如 Qt.ItemDataRole.UserRole）",
+      "sd13": "Qt.UserRole / Qt.Checked（仅非作用域）",
+      "strategy": "code-convention",
+      "rule": "统一用非作用域写法（Qt.UserRole / Qt.Checked / Qt.ItemIsUserCheckable），两版本通用，无需补丁。",
+      "auto_shim": false
+    },
+    {
+      "id": "graphview-focus",
+      "topic": "图视图定位/选中节点",
+      "sd16": "✅ SDUIMgr/QtForPythonUIMgr 提供 getGraphViewIDCount() / getGraphViewIDAt(i) / getGraphFromGraphViewID(vid) / focusGraphNode(vid, node) -> 可居中定位，Goto 正常（SD14 同）。",
+      "sd13": "⚠ 无官方 focus 接口，但可用 Qt 层实现。已在本机 SD13.0.0 install（resources/python/sd/api，IPA 自动生成的完整绑定）核对：两个 UI 管理器都没有 focusGraphNode / getGraphViewIDCount / setCurrentGraphSelection / selectNode(s)；但 SDNode.getPosition() 可用且图坐标==QGraphicsScene 坐标（1:1、已实测）-> 用 QApplication.allWidgets() 枚举存活 QGraphicsView + fitInView 缩放居中，Goto 可用。",
+      "note_local_install": "⚠ 本开发机的 SD 安装是 13.0.0（不是 16）。想核对 SD16 接口不能读本机 stub，要在真正的 SD16/SD14 里跑 dir()。曾因把本机 SD13 install 误当 SD16，错误得出‘SD16 也没有 focusGraphNode’，已更正。",
+      "strategy": "sdcompat.focus_node 多策略：SD16/14 走 focusGraphNode 居中；SD13 无官方接口 -> 策略3 Qt 层 getPosition()+fitInView 缩放居中（已验证）；均失败才回显 <label>(id:)@ (x,y)+复制 id 到剪贴板（不崩溃）。",
+      "rule": "统一调 sdcompat.focus_node(graph, node_id, app)；功能模块的 goto_node 只转发。核对某版本接口必须在该版本 SD 里 introspect，别读别的版本的 stub。",
+      "auto_shim": false,
+      "affected_files": ["MaxSDPlugins/sdcompat.py", "MaxSDPlugins/output/output_data.py", "MaxSDPlugins/debug/check_dependencies.py"]
+    }
+  ],
+  "exported_modules_qt_usage": {
+    "_comment": "导出的功能模块实际用到的 Qt API（决定补丁覆盖范围）。",
+    "imports": ["QtWidgets", "QtCore"],
+    "uses_qtgui_qaction": false,
+    "exec_calls": ["QMenu.exec(pos)"],
+    "static_dialogs": ["QFileDialog.getSaveFileName", "QFileDialog.getOpenFileName", "QMessageBox.information/warning"],
+    "enum_access": ["Qt.UserRole", "Qt.Checked", "Qt.Unchecked", "Qt.ItemIsUserCheckable", "Qt.ItemIsAutoTristate", "Qt.CustomContextMenu"]
+  }
+}
