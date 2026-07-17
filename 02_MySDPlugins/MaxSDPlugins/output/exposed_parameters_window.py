@@ -25,6 +25,7 @@ except Exception:
         print(f"[MaxSDPlugin/output] PySide 导入失败，UI 不可用: {_e}")
 
 from . import output_data as od
+from .. import sdcompat
 
 _LOG = "[MaxSDPlugin/output]"
 
@@ -217,7 +218,7 @@ if QtWidgets is not None:
             menu = QtWidgets.QMenu(self)
             menu.addAction("Goto（在图中定位）").triggered.connect(self._goto_broken)
             menu.addAction("删除当前节点").triggered.connect(self._delete_current_node)
-            menu.exec(self._broken_tree.viewport().mapToGlobal(pos))
+            sdcompat.exec_widget(menu, self._broken_tree.viewport().mapToGlobal(pos))
 
         def _goto_broken(self):
             it = self._broken_tree.currentItem()

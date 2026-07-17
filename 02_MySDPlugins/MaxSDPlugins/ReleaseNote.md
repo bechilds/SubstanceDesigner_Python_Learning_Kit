@@ -2,6 +2,12 @@
 插件名称：MaxSDPlugin
 
 ## 更新记录（格式：日期 · vX.Y.Z · 改动 · 影响范围 · 是否需重启 SD）
+- 2026-07-16 · v0.8.0 · 新增 Edit/FrameColorModify：汇总当前画布全部 Frame，统一设置 RGB 与全局透明度，支持单步撤销；新增 File/SaveWithResrouce：递归收集非官方/非 D:\LG_SDNodes 依赖与 Resource，保存 SBS 副本、分类复制外部文件并生成 JSON 清单；OutputTools 纳入两个新分类，同时修复 SD16 下 menu.sdcompat 导入缩进 · frame_color_modify/+save_with_resource/+menu+output_tools+文档 · 入口版本回退值生效需重启，功能与菜单可热重载
+- 2026-07-16 · v0.7.4 · 修复 Designer 自带节点依赖被计入文件风险：从当前 sd.__file__ 动态反推安装目录 resources/packages 并设为可信根，兼容不同盘符、Adobe/Allegorithmic 路径及 SD13/16；正常官方依赖不再 +15，文件确实丢失时仍保留丢失风险 · sbs_file_reporter/+版本+文档 · 功能模块可热重载
+- 2026-07-16 · v0.7.3 · SBSFileRepoter 评分结果首行显示当前 .sbs 文件名；主要成本列表上方新增跨 Qt5/Qt6 自绘直方图，按 0-0.5/0.5-1/1-3/3-8/8+ 固定区间展示节点最终权重与节点数量，刷新失败时清空旧图表 · sbs_file_reporter/+版本+文档 · 功能模块可热重载
+- 2026-07-16 · v0.7.2 · SBSFileRepoter 评分按 Low 白/Medium 绿/High 红/Very High 紫显示；新增文件风险分：丢失节点/Ghost/依赖 +60、Resource 丢失 +40、D:\LG_SDNodes 外本地依赖 +15/Resource +10，并在结构警告列出加分来源；复杂度分与文件风险分拆开显示后汇总 · sbs_file_reporter/+版本+文档 · 功能模块可热重载
+- 2026-07-16 · v0.7.1 · 修复 SBSFileRepoter 将 SDValueInt2 类型名数字误读为 4x4、将公共 sbscompgraph 定义前缀误判为 Graph Instance；尺寸改按 SDPropertyInheritanceMethod 明确计算，动态值按 1K 标记估算；参数修正改为 Identifier 精确匹配；顶部只保留规则与突出评分，成本列表改为基础权重+可解释计分依据 · sbs_file_reporter/+版本+文档 · 功能模块可热重载
+- 2026-07-16 · v0.7.0 · 新增 Analysis/SBSFileRepoter：从 Published Output 反向遍历，输出 Current/Potential 静态复杂度、分辨率/参数修正、热点和结构警告，支持跨 SD13/16 定位与确认后发布；菜单/入口/现有窗口统一补齐 QAction、exec/exec_、当前图和主窗口兼容调用 · sbs_file_reporter/+menu+sdcompat 调用方+文档 · 首次安装或入口版本回退值生效需重启，功能与菜单可热重载
 - 2026-07-01 · v0.6.8 · 【SD13 Goto 转正】给 focus_node 增加策略3：SD13 等无 focusGraphNode 的版本，改走纯 Qt 层——用 SDNode.getPosition()（图坐标与 QGraphicsScene 坐标 1:1，已 SD13.0.0 实测）在存活可见的 QGraphicsView 上 fitInView 缩放居中，效果接近 F 键（既居中又放大）。视图枚举用 QApplication.allWidgets()+shiboken.isValid() 判活，规避 findChildren 返回已删除视图的 'already deleted'；优先用 scene.itemAt 命中的节点图元精确框住，命中不到用固定窗口。清理实验期冗余日志 · sdcompat/ · 热重载
 - 2026-07-01 · v0.6.7 · 【纠偏】上一版误判：本开发机的 SD 安装其实是 13.0.0（非 16），我把它的 API stub 当成 SD16 读，错误得出“SD16 也没有 focusGraphNode”。事实更正：SD16/SD14 有 focusGraphNode，Goto 正常；仅 SD13 缺定位/选中接口。focus_node 恢复正确分层（SD16/14 居中；SD13 降级），SD13 降级增强：回显 <label>(id:) @ (x,y) 坐标 + 复制 id 到剪贴板（坐标经 SD13 实测 SDNode.getPosition() 可用）；查找表/memory 同步更正 · sdcompat/+docs/+utilities/ · 热重载
 - 2026-07-01 · v0.6.6 · 存入 SD13 实测 UI 管理器接口清单到查找表（sd_api_compat.json/SD_API_Compatibility.md）；确认 SD13 只有 getXxxSelection 只读接口、无 focusGraphNode/set 写入接口 → 无法程序化定位/选中；focus_node 降级提示改为回显节点 `<label> (id:<id>)` 便于手动查找 · sdcompat/+docs/ · 热重载

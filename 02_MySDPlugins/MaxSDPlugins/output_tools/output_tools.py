@@ -7,6 +7,9 @@
 功能分类 -> 分支（子模块）由扫描插件包目录得到：
   - Output      -> output/ 下各 .py
   - Debug       -> debug/ 下各 .py
+    - Edit        -> frame_color_modify/ 下各 .py
+    - File        -> save_with_resource/ 下各 .py
+    - Analysis    -> sbs_file_reporter/ 下各 .py
   - OutputTools -> 本包各 .py
 导出：拼接所选模块源码，顶部加生成信息，去掉相对 import，附功能清单注释。
 数据层与 UI 层放在同一文件（SD 专有 API 极少，全部包 try/except）。
@@ -33,6 +36,9 @@ _dialog_ref = None  # 防 GC
 _CATEGORY_TITLES = {
     "output": "Output（曝光参数）",
     "debug": "Debug（Publish Checker）",
+    "frame_color_modify": "Edit（FrameColorModify）",
+    "save_with_resource": "File（SaveWithResrouce）",
+    "sbs_file_reporter": "Analysis（SBSFileRepoter）",
     "output_tools": "OutputTools（输出脚本）",
 }
 

@@ -14,10 +14,13 @@ except Exception:
     except Exception:
         QtGui = None
 
+from . import sdcompat
+
 
 def _add_category(parent_menu, main_win, ctx, title, import_path, attr, fail_title):
     """通用：在 parent_menu 下建一个子菜单，延迟导入功能模块；失败时做成可点击错误项。"""
     QtWidgets = ctx["QtWidgets"]
+    QAction = sdcompat.get_qaction()
     submenu = parent_menu.addMenu(title)
     try:
         import importlib
@@ -27,13 +30,13 @@ def _add_category(parent_menu, main_win, ctx, title, import_path, attr, fail_tit
         import traceback
         err = traceback.format_exc()
         print(f"[MaxSDPlugin] 加载 {fail_title} 失败: {e}\n{err}")
-        act = QtGui.QAction(f"{fail_title}（加载失败，点击查看原因）", main_win)
+        act = QAction(f"{fail_title}（加载失败，点击查看原因）", main_win)
         act.triggered.connect(lambda: QtWidgets.QMessageBox.critical(
             main_win, f"MaxSDPlugin · {fail_title} 加载失败", err))
         submenu.addAction(act)
         ctx["keep"].append(act)
         return
-    act = QtGui.QAction(fail_title, main_win)
+    act = QAction(fail_title, main_win)
     act.triggered.connect(lambda: show(main_win))
     submenu.addAction(act)
     ctx["keep"].extend([submenu, act])
@@ -46,29 +49,34 @@ def build_menu(menu, main_win, ctx):
     返回需保活的对象列表（防 GC）。
     """
     keep = ctx["keep"]
-    if QtGui is None:
+    QAction = sdcompat.get_qaction()
+    if QtGui is None or QAction is None:
         return keep
 
     # 顶部高亮版本号
-    ver = QtGui.QAction(f"● 版本 v{ctx['get_version']()}", main_win)
+    ver = QAction(f"● 版本 v{ctx['get_version']()}", main_win)
     f = ver.font(); f.setBold(True); ver.setFont(f)
     ver.triggered.connect(ctx["show_about"])
     menu.addAction(ver)
     try:
         menu.setDefaultAction(ver)
         menu.setStyleSheet("QMenu::item:default { color: #4caf50; font-weight: bold; }")
-        ver.setMenuRole(QtGui.QAction.MenuRole.NoRole)
+        no_role = getattr(QAction, "NoRole", None)
+        if no_role is None and hasattr(QAction, "MenuRole"):
+            no_role = QAction.MenuRole.NoRole
+        if no_role is not None:
+            ver.setMenuRole(no_role)
     except Exception:
         pass
     keep.append(ver)
     menu.addSeparator()
 
-    about = QtGui.QAction("关于 / 版本信息", main_win)
+    about = QAction("关于 / 版本信息", main_win)
     about.triggered.connect(ctx["show_about"])
     menu.addAction(about)
     keep.append(about)
 
-    reload_act = QtGui.QAction("重载插件（Unload→Load）", main_win)
+    reload_act = QAction("重载插件（Unload→Load）", main_win)
     reload_act.triggered.connect(ctx["reload_plugin"])
     menu.addAction(reload_act)
     keep.append(reload_act)
@@ -76,6 +84,9 @@ def build_menu(menu, main_win, ctx):
 
     # 功能分类：新增分类只在此追加一行
     _add_category(menu, main_win, ctx, "Output", ".output", "show_window", "曝光参数")
+    _add_category(menu, main_win, ctx, "Edit", ".frame_color_modify", "show_window", "FrameColorModify")
+    _add_category(menu, main_win, ctx, "File", ".save_with_resource", "show_window", "SaveWithResrouce")
     _add_category(menu, main_win, ctx, "Debug", ".debug", "show_window", "Publish Checker")
+    _add_category(menu, main_win, ctx, "Analysis", ".sbs_file_reporter", "show_window", "SBSFileRepoter")
     _add_category(menu, main_win, ctx, "OutputTools", ".output_tools", "show_window", "输出脚本")
     return keep

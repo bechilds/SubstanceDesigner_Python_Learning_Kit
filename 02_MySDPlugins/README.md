@@ -20,6 +20,19 @@
 │   │   ├── __init__.py
 │   │   ├── check_dependencies.py         # 发布警告扫描 + UI
 │   │   └── README.md
+│   ├── frame_color_modify/ # Edit/FrameColorModify（批量修改 Frame RGBA）
+│   │   ├── __init__.py
+│   │   ├── frame_color_modify.py
+│   │   └── README.md
+│   ├── save_with_resource/ # File/SaveWithResrouce（保存副本并收集外部文件）
+│   │   ├── __init__.py
+│   │   ├── save_with_resource.py
+│   │   └── README.md
+│   ├── sbs_file_reporter/ # Analysis 功能分类（SBS 静态复杂度审计）
+│   │   ├── __init__.py
+│   │   ├── reporter_logic.py              # 可达节点遍历 + 复杂度评分
+│   │   ├── reporter_window.py             # 报告、定位与发布 UI
+│   │   └── README.md
 │   └── ReleaseNote.md      # 插件功能计划清单
 ├── utilities/           # 自己积累的工具脚本（可复用函数）
 └── docs/                # 基础概念备注 / 官方文档摘录 / 开发日志
@@ -37,8 +50,14 @@ MaxSDPlugin
 ├─ 关于 / 版本信息
 ├─ Output
 │  └─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（删除重置为 TODO）
+├─ Edit
+│  └─ FrameColorModify # 统一修改当前画布全部 Frame 的颜色和透明度
+├─ File
+│  └─ SaveWithResrouce # 保存 SBS 副本并收集外部依赖与 Resource
 └─ Debug
-   └─ Check Dependencies # 扫描发布 sbsar 可能警告的节点（损坏函数/缺失资源/未连接输出/悬挂）
+│  └─ Publish Checker    # 扫描发布 sbsar 可能警告的节点（损坏函数/缺失资源/未连接输出/悬挂）
+└─ Analysis
+  └─ SBSFileRepoter     # 静态复杂度评分、潜在分支、高成本节点定位与发布预警
 ```
 
 ## 📝 插件功能计划（MaxSDPlugin）
@@ -52,6 +71,7 @@ MaxSDPlugin
 - 曝光参数与开关按钮的关联设定
 - 3D 预览窗口摄像机参数设置
 - 批量修改 Frame 的 A 值
+- 保存 SBS 副本并收集非官方、非 Library 外部依赖与 Resource
 - 校验输出的 Identifier 与 Usage 是否一致
 
 ## ▶️ 运行方式

@@ -37,14 +37,7 @@ _LOG = "[MaxSDPlugin/output]"
 # --------------------------------------------------------------------------- #
 def get_current_graph(app=None):
     """返回当前在图视图中打开的 SDGraph；取不到返回 None。"""
-    try:
-        if app is None:
-            app = sd.getContext().getSDApplication()
-        qt_ui = app.getQtForPythonUIMgr()
-        return qt_ui.getCurrentGraph() if qt_ui else None
-    except Exception as e:
-        print(f"{_LOG} 获取当前图失败: {e}")
-        return None
+    return sdcompat.get_current_graph(app)
 
 
 def get_package_file_path(graph):

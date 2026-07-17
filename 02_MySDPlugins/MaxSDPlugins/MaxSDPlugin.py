@@ -12,6 +12,7 @@
 """
 
 import sd  # SD 提供的 Python 包；只在 SD 进程内可用
+from . import sdcompat
 
 # --- PySide 导入：SD 16.0.1 内置 PySide6（Qt 6.8.x），保留 PySide2 回退以兼容旧版 ---
 _PYSIDE_NAME = None
@@ -30,7 +31,7 @@ except Exception:
         qVersion = None
         print(f"[MaxSDPlugin] PySide 导入失败，UI 功能不可用: {_e}")
 
-__version__ = "0.6.8"
+__version__ = "0.8.0"
 
 def _entry_files_mtime():
     """返回入口文件 MaxSDPlugin.py / __init__.py 的最新修改时间（取不到返回 0）。"""
@@ -67,13 +68,7 @@ _keep_alive = []  # 菜单项/子菜单的保活引用（由 menu.build_menu 填
 
 def _get_main_window():
     """获取 SD 的 Qt 主窗口；无界面或失败时返回 None。"""
-    try:
-        app = sd.getContext().getSDApplication()
-        qt_ui = app.getQtForPythonUIMgr()
-        return qt_ui.getMainWindow() if qt_ui else None
-    except Exception as e:
-        print(f"[MaxSDPlugin] 获取主窗口失败: {e}")
-        return None
+    return sdcompat.get_main_window()
 
 
 def _show_about(main_win=None):
