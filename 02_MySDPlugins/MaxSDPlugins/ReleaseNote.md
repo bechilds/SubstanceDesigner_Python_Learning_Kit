@@ -2,6 +2,21 @@
 插件名称：MaxSDPlugin
 
 ## 更新记录（格式：日期 · vX.Y.Z · 改动 · 影响范围 · 是否需重启 SD）
+- 2026-07-24 · v0.14.1 · 修复 BatchMergeTexChannel 在部分 Designer 版本中将完整 SBS 误报为“缺少贴图输入/输出”：契约检查不再依赖版本差异较大的 getProperties 集合枚举，改为按 5 个贴图输入、32 个开关和 output 的 Identifier 逐项调用 getPropertyFromId，并在 API 查询异常时显示真实原因；误禁用的 RGBA 来源选择会在检查通过后自动恢复 · batch_merge_tex_channel/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.14.0 · BatchMergeTexChannel 适配最终 SBS 接口：按最终输出 Channel R/G/B/A 建立 4 个来源组，每组在 ColorMap RGBA 与 GrayMap01-04 共 8 个来源中严格单选，处理时只将所选开关设为 True、同组其余保持 False；新增顶部“工具功能正常/异常”状态，只有 SBS 的 5 个贴图输入、32 个开关和 output 完整一致时才开放扫描与处理 · batch_merge_tex_channel/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.13.0 · 曝光参数主树的分类/Group 节点新增三态勾选，可整组选择或取消；批量替换弹窗新增 Group 勾选项和逐行选择列，关键字预览及应用只处理勾选参数。新增“去除 Copy”，批量清理勾选参数 Label/ID 中独立的 Copy token；ID 通过创建新参数、迁移所有 Get Variable 引用并删除旧参数实现，失败时恢复引用并清理新参数，整批可单步撤销 · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.12.2 · 修复批量复制预览正确但创建后仍是旧参数：不再复制源 identifier/id/label 身份字段，避免覆盖 graph.newProperty 使用的新 ID；非身份 metadata 继续继承，新 Label 改由目标 property metadata 写入。批量替换新增多个“排除 Group 关键字”，支持逗号/分号/换行分隔，命中类别的整行跳过并显示排除数 · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.12.1 · 修复批量复制执行时 SDApiError.ItemNotFound 穿透回调：Adobe APIException 继承 BaseException，现用专用异常元组捕获；注解复制改为只写源/新参数共同支持的注解，不支持项进入警告汇总。同步检查并加固批量替换，Label、Group、当前值逐字段独立写入，单字段 API 错误只汇总跳过、不再中断窗口 · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.12.0 · “复制当前参数”扩展为“复制勾选参数”：支持一次选择多个 INPUT PARAMETERS，在创建前弹窗预览源 ID/Label 与新 ID/Label，可按关键字批量替换新 ID、新 Label 或两者并手动调整；确认后在一个 UndoGroup 内逐项调用 graph.newProperty 创建真实副本并复制类型、注解和原生当前值，失败项单独汇总 · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.11.2 · 曝光参数复制的来源由不稳定的高亮项改为“唯一勾选项”，随后继续使用与参数面板 + 对应的 graph.newProperty 创建新参数并复制设置；批量替换窗口新增作用字段、查找关键字、替换文本、区分大小写和预览命中数，可对 Label、Group、当前值执行预览后统一应用 · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.11.1 · 纠正曝光参数复制/批量替换语义：“复制当前参数”现在用 graph.newProperty 在 INPUT PARAMETERS 中创建真实副本并复制类型、注解和原生当前值；“批量替换参数设置”改为独立逐行编辑窗口，可统一修改勾选参数的 Label、Group 和受支持的标量当前值，复杂类型值保持只读 · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.11.0 · 曝光参数新增“复制当前参数”和“批量替换参数设置”，可将来源参数的 SD 原生当前值一次应用到勾选的同类型目标并整体撤销；节点列表改为只显示曝光参数输入已丢失并触发 Empty variable 画布警告的节点，正常曝光绑定及资源/连线类问题不再误报，列名同步改为“有曝光参数的节点 / 对应的损坏节点属性 / 警告类型” · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.10.0 · 新增 Output/BatchMergeTexChannel：递归扫描输入目录，按 5 组自定义关键字匹配并预览文件组，通过临时 SBS 副本设置 5 个贴图输入与可用通道开关、计算 output 并批量导出；支持缺失/重复/输出冲突检查、逐组日志、取消和显式覆盖。当前随附 SBS 实际仅提供 Color RGBA 与 Gray01 开关，UI 会禁用缺失的 Gray02-04 开关并显示契约诊断 · batch_merge_tex_channel/+BatchMergeTexChannel.sbs+menu+版本+文档 · 功能、菜单和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.9.4 · 修复 AutoAddExposeCommitToNode 创建的 Comment 严重错位：sNewAsChild(node) 生成的是节点子对象，旧代码错误写入节点 Graph 绝对坐标导致父坐标重复叠加；现改为子对象相对坐标 (0, 75)，重新覆盖应用可同步修正已有错位 Comment · auto_add_expose_comment/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.9.3 · AutoAddExposeCommitToNode 预览列表新增名称/ID 实时搜索，覆盖 Graph、节点名称与 ID、节点属性、曝光参数 ID 和显示名称；支持空格多关键词、匹配数量显示、Enter 选中首项，便于在大量扫描结果中快速找到节点 · auto_add_expose_comment/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.9.2 · AutoAddExposeCommitToNode 扫描预览新增“查找节点”按钮和表格双击定位，复用 sdcompat.focus_node 跨 SD13/14/16 居中或回显节点 ID/坐标，便于逐项核对扫描结果且不修改 Graph · auto_add_expose_comment/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-24 · v0.9.1 · AutoAddExposeCommitToNode 改为严格两阶段：先只读扫描并展示可勾选计划、最终拟写内容和逐层诊断，用户点击应用并再次确认后才写 Comment；Get Variable 字符串优先走 SDValueString.get()，保留序列化回退以改善零匹配问题 · auto_add_expose_comment/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
+- 2026-07-22 · v0.9.0 · 新增 Edit/AutoAddExposeCommitToNode：扫描当前 SBS 文件全部 Graph，将节点实际引用的曝光参数名称写入节点下方 75 像素的 Comment；已有 Comment 支持覆盖或追加，操作可单步撤销 · auto_add_expose_comment/+menu+output_tools+版本+文档 · 功能、菜单和版本可热重载，入口回退版本生效需重启
 - 2026-07-16 · v0.8.0 · 新增 Edit/FrameColorModify：汇总当前画布全部 Frame，统一设置 RGB 与全局透明度，支持单步撤销；新增 File/SaveWithResrouce：递归收集非官方/非 D:\LG_SDNodes 依赖与 Resource，保存 SBS 副本、分类复制外部文件并生成 JSON 清单；OutputTools 纳入两个新分类，同时修复 SD16 下 menu.sdcompat 导入缩进 · frame_color_modify/+save_with_resource/+menu+output_tools+文档 · 入口版本回退值生效需重启，功能与菜单可热重载
 - 2026-07-16 · v0.7.4 · 修复 Designer 自带节点依赖被计入文件风险：从当前 sd.__file__ 动态反推安装目录 resources/packages 并设为可信根，兼容不同盘符、Adobe/Allegorithmic 路径及 SD13/16；正常官方依赖不再 +15，文件确实丢失时仍保留丢失风险 · sbs_file_reporter/+版本+文档 · 功能模块可热重载
 - 2026-07-16 · v0.7.3 · SBSFileRepoter 评分结果首行显示当前 .sbs 文件名；主要成本列表上方新增跨 Qt5/Qt6 自绘直方图，按 0-0.5/0.5-1/1-3/3-8/8+ 固定区间展示节点最终权重与节点数量，刷新失败时清空旧图表 · sbs_file_reporter/+版本+文档 · 功能模块可热重载

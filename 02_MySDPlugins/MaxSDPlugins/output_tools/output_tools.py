@@ -37,6 +37,7 @@ _CATEGORY_TITLES = {
     "output": "Output（曝光参数）",
     "debug": "Debug（Publish Checker）",
     "frame_color_modify": "Edit（FrameColorModify）",
+    "auto_add_expose_comment": "Edit（AutoAddExposeCommitToNode）",
     "save_with_resource": "File（SaveWithResrouce）",
     "sbs_file_reporter": "Analysis（SBSFileRepoter）",
     "output_tools": "OutputTools（输出脚本）",

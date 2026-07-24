@@ -31,7 +31,7 @@ except Exception:
         qVersion = None
         print(f"[MaxSDPlugin] PySide 导入失败，UI 功能不可用: {_e}")
 
-__version__ = "0.8.0"
+__version__ = "0.14.1"
 
 def _entry_files_mtime():
     """返回入口文件 MaxSDPlugin.py / __init__.py 的最新修改时间（取不到返回 0）。"""

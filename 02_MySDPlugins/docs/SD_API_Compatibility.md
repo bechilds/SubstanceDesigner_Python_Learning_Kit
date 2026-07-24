@@ -3,7 +3,7 @@
 > 本表是 **本地标准查找表**。涉及导出工具 / 跨版本兼容的改动前**先查这里**，不要凭记忆猜 SD13 接口名。
 > 机器可读版本：[sd_api_compat.json](sd_api_compat.json)。新增差异时两份都要同步，并更新 `output_tools.py` 的 `_RUNTIME_COMPAT_SHIM`。
 >
-> 最后更新：2026-06-30
+> 最后更新：2026-07-22
 
 ## 版本对照
 
@@ -24,6 +24,7 @@
 | 3 | 对话框/菜单模态执行 | `dialog.exec()` / `menu.exec(pos)` | `dialog.exec_()` / `menu.exec_(pos)` | **运行时补丁**：`exec` 与 `exec_` 互为别名 |
 | 4 | 枚举作用域 | `Qt.UserRole`（非作用域可用） | `Qt.UserRole` | **代码约定**：统一非作用域写法，两版通用 |
 | 5 | 图视图定位（`SDUIMgr`） | `getGraphViewIDCount` / `getGraphViewIDAt` / `getGraphFromGraphViewID` / `focusGraphNode` | 无这些方法；改走 Qt 层 `SDNode.getPosition()` + `QGraphicsView.fitInView` | **`sdcompat.focus_node` 多策略探测**：SD16/14 用 focusGraphNode；SD13 用 Qt 层缩放居中 |
+| 6 | 创建 Comment 图对象 | `SDGraphObjectComment.sNew()` / `sNewAsChild()` | 本机 SD13.0.0 Python 绑定无 `SDGraphObjectComment` | **导入守卫**：功能明确提示 API 不可用，不修改 Graph |
 
 ## SD13 实测 UI 管理器接口清单（2026-07-01）
 

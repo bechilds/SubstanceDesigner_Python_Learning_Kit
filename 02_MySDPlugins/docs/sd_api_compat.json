@@ -7,7 +7,7 @@
     "bundled_as": "_maxsd_bundle.root_sdcompat（OutputTools 导出时自动打包，最先 exec 并调 qt_patch()）",
     "used_by": "功能模块 from .. import sdcompat；导出时自动改写为 from _maxsd_bundle import root_sdcompat as sdcompat"
   },
-  "last_updated": "2026-07-01",
+  "last_updated": "2026-07-22",
   "versions": {
     "SD16": { "app": "Adobe Substance 3D Designer 16.0.1", "python": "3.13.x", "pyside": "PySide6", "qt": "6.8.x" },
     "SD14_15": { "app": "Substance 3D Designer 14.0 - 15.x", "pyside": "PySide6", "qt": "6.5.x" },
@@ -78,6 +78,16 @@
       "rule": "统一调 sdcompat.focus_node(graph, node_id, app)；功能模块的 goto_node 只转发。核对某版本接口必须在该版本 SD 里 introspect，别读别的版本的 stub。",
       "auto_shim": false,
       "affected_files": ["MaxSDPlugins/sdcompat.py", "MaxSDPlugins/output/output_data.py", "MaxSDPlugins/debug/check_dependencies.py"]
+    },
+    {
+      "id": "graph-object-comment",
+      "topic": "创建 Comment 图对象",
+      "sd16": "SDGraphObjectComment.sNew(graph) / sNewAsChild(node) 可创建 Comment。",
+      "sd13": "本机 SD13.0.0 的完整 Python API 绑定中无 SDGraphObjectComment。",
+      "strategy": "import-guard",
+      "rule": "功能模块守卫 sd.api.sdgraphobjectcomment 导入；接口不可用时明确提示并保持 Graph 不变。",
+      "auto_shim": false,
+      "affected_files": ["MaxSDPlugins/auto_add_expose_comment/auto_add_expose_comment.py"]
     }
   ],
   "exported_modules_qt_usage": {

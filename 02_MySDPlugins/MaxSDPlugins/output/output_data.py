@@ -9,6 +9,7 @@ SD 专有的 `sd` / `sd.api.*` 仅在 SD 进程内可用，这里全部包 try/e
 import os
 import json
 import datetime
+import re
 
 import sd  # SD 提供的 Python 包；只在 SD 进程内可用
 
@@ -25,11 +26,19 @@ try:
 except Exception:  # pragma: no cover
     SDValueSerializer = None
 
+try:
+    from sd.api.apiexception import APIException
+    _SD_API_ERRORS = (Exception, APIException)
+except Exception:  # pragma: no cover
+    APIException = None
+    _SD_API_ERRORS = (Exception,)
+
 # OutputData 文件名与数据结构版本
 OUTPUT_DATA_FILENAME = "OutputData.json"
 SCHEMA_VERSION = "0.1.0"
 
 _LOG = "[MaxSDPlugin/output]"
+_IDENTITY_SETTING_IDS = {"id", "identifier", "label"}
 
 
 # --------------------------------------------------------------------------- #
@@ -113,6 +122,22 @@ def _strip_quotes(s):
     return s
 
 
+def scalar_value_to_text(value):
+    """把 SDValueSerializer 的标量包装文本解成适合编辑的值。
+
+    例如 `SDValueBool(bool(false))` -> `false`，
+    `SDValueString(string(ChannelR))` -> `ChannelR`。
+    """
+    text = "" if value is None else str(value).strip()
+    wrapper = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\((.*)\)$", re.DOTALL)
+    while True:
+        match = wrapper.match(text)
+        if match is None:
+            break
+        text = match.group(1).strip()
+    return _strip_quotes(text)
+
+
 def _read_group(graph, prop):
     """读取属性的分组（group 注解）。无分组 / 读取失败返回空串。
 
@@ -122,7 +147,7 @@ def _read_group(graph, prop):
         v = graph.getPropertyAnnotationValueFromId(prop, "group")
         if v is None:
             return ""
-        return _strip_quotes(_value_to_str(v)) or ""
+        return scalar_value_to_text(_value_to_str(v)) or ""
     except Exception:
         return ""
 
@@ -261,7 +286,7 @@ def load_output_data(path):
 
 
 # --------------------------------------------------------------------------- #
-# 删除（取消暴露） / 加载应用
+# 参数设置复制 / 删除（取消暴露） / 加载应用
 # --------------------------------------------------------------------------- #
 def _undo_group(name):
     """返回一个可用作 with 上下文的 UndoGroup；取不到时返回一个空上下文。
@@ -274,6 +299,429 @@ def _undo_group(name):
     except Exception:
         import contextlib
         return contextlib.nullcontext()
+
+
+def _new_string_value(text):
+    """创建字符串 SDValue；API 不可用时返回 None。"""
+    try:
+        from sd.api.sdvaluestring import SDValueString
+        return SDValueString.sNew(text or "")
+    except Exception as e:
+        print(f"{_LOG} 创建字符串参数值失败: {e}")
+        return None
+
+
+def _error_text(error):
+    """返回有内容的异常说明；Adobe APIException 的 str() 经常为空。"""
+    text = str(error).strip()
+    if text:
+        return text
+    error_code = getattr(error, "mErrorCode", None)
+    return str(error_code) if error_code is not None else type(error).__name__
+
+
+def _property_annotation_ids(graph, prop):
+    """返回属性实际支持的注解 ID；读取失败返回空集合和错误。"""
+    try:
+        annotations = graph.getPropertyAnnotations(prop)
+        return {
+            annotations[index].getId()
+            for index in range(len(annotations))
+        }, None
+    except _SD_API_ERRORS as error:
+        return set(), _error_text(error)
+
+
+def _property_metadata(graph, prop):
+    """返回参数的可写 metadata dict；接口不可用或读取失败时返回错误。"""
+    try:
+        metadata = graph.getPropertyMetadataDictFromId(
+            prop.getId(), SDPropertyCategory.Input)
+        return metadata, None
+    except _SD_API_ERRORS as error:
+        return None, _error_text(error)
+
+
+def _copy_property_metadata(graph, source_prop, target_prop):
+    """复制非身份 metadata，避免 identifier/label 把新参数名称覆盖回旧值。"""
+    skipped = []
+    source_metadata, source_error = _property_metadata(graph, source_prop)
+    target_metadata, target_error = _property_metadata(graph, target_prop)
+    if source_error:
+        return [("<source metadata>", source_error)]
+    if target_error:
+        return [("<target metadata>", target_error)]
+    try:
+        properties = source_metadata.getProperties()
+        for index in range(len(properties)):
+            metadata_prop = properties[index]
+            metadata_id = metadata_prop.getId()
+            if (metadata_id or "").lower() in _IDENTITY_SETTING_IDS:
+                continue
+            try:
+                value = source_metadata.getPropertyValue(metadata_prop)
+                if value is not None:
+                    target_metadata.setPropertyValueFromId(metadata_id, value)
+            except _SD_API_ERRORS as error:
+                skipped.append((metadata_id, _error_text(error)))
+    except _SD_API_ERRORS as error:
+        skipped.append(("<metadata>", _error_text(error)))
+    return skipped
+
+
+def _set_property_text_setting(graph, prop, setting_id, text):
+    """通过 property metadata 写文本设置，并对受支持的注解做同步。"""
+    value = _new_string_value(text)
+    if value is None:
+        return False, ["无法创建字符串值"]
+    changed = False
+    errors = []
+    metadata, metadata_error = _property_metadata(graph, prop)
+    if metadata is not None:
+        try:
+            metadata.setPropertyValueFromId(setting_id, value)
+            changed = True
+        except _SD_API_ERRORS as error:
+            errors.append(f"metadata: {_error_text(error)}")
+    elif metadata_error:
+        errors.append(f"metadata: {metadata_error}")
+
+    annotation_ids, annotation_error = _property_annotation_ids(graph, prop)
+    if setting_id in annotation_ids:
+        try:
+            graph.setPropertyAnnotationValueFromId(prop, setting_id, value)
+            changed = True
+        except _SD_API_ERRORS as error:
+            errors.append(f"annotation: {_error_text(error)}")
+    elif annotation_error:
+        errors.append(f"annotation: {annotation_error}")
+    return changed, errors
+
+
+def _copy_property_annotations(graph, source_prop, target_prop):
+    """只复制源/目标共同支持的注解，返回跳过或失败信息。"""
+    skipped = []
+    source_ids, source_error = _property_annotation_ids(graph, source_prop)
+    target_ids, target_error = _property_annotation_ids(graph, target_prop)
+    if source_error:
+        skipped.append(("<source annotations>", source_error))
+    if target_error:
+        skipped.append(("<target annotations>", target_error))
+    copy_source_ids = {
+        annotation_id for annotation_id in source_ids
+        if (annotation_id or "").lower() not in _IDENTITY_SETTING_IDS
+    }
+    for annotation_id in sorted(copy_source_ids - target_ids):
+        skipped.append((annotation_id, "新参数不支持此注解"))
+    for annotation_id in sorted(copy_source_ids & target_ids):
+        try:
+            value = graph.getPropertyAnnotationValueFromId(
+                source_prop, annotation_id)
+            if value is not None:
+                graph.setPropertyAnnotationValueFromId(
+                    target_prop, annotation_id, value)
+        except _SD_API_ERRORS as error:
+            skipped.append((annotation_id, _error_text(error)))
+    return skipped
+
+
+def _duplicate_exposed_parameter(graph, source_id, new_id, new_label):
+    """创建一个真实参数副本；调用方负责 UndoGroup。"""
+    if graph is None or SDPropertyCategory is None:
+        raise RuntimeError("未找到当前 Graph 或 SDPropertyCategory API 不可用")
+    if not source_id or not new_id:
+        raise ValueError("源参数 ID 和新参数 ID 不能为空")
+    try:
+        source_prop = graph.getPropertyFromId(source_id, SDPropertyCategory.Input)
+    except _SD_API_ERRORS as error:
+        raise RuntimeError(_error_text(error))
+    if source_prop is None:
+        raise ValueError(f"当前图中未找到源参数: {source_id}")
+    try:
+        existing_prop = graph.getPropertyFromId(new_id, SDPropertyCategory.Input)
+    except _SD_API_ERRORS as error:
+        raise RuntimeError(_error_text(error))
+    if existing_prop is not None:
+        raise ValueError(f"参数 ID 已存在: {new_id}")
+    try:
+        if source_prop.isConnectable():
+            raise ValueError("INPUTS 图像输入不能复制到 INPUT PARAMETERS")
+    except AttributeError:
+        pass
+
+    warnings = []
+    try:
+        target_prop = graph.newProperty(
+            new_id, source_prop.getType(), SDPropertyCategory.Input)
+    except _SD_API_ERRORS as error:
+        raise RuntimeError(_error_text(error))
+    if target_prop is None:
+        raise RuntimeError("graph.newProperty() 未能创建参数")
+    warnings.extend(_copy_property_annotations(graph, source_prop, target_prop))
+    warnings.extend(_copy_property_metadata(graph, source_prop, target_prop))
+
+    _, label_errors = _set_property_text_setting(
+        graph, target_prop, "label", new_label or new_id)
+    for reason in label_errors:
+        warnings.append(("label", reason))
+
+    try:
+        source_value = graph.getPropertyValue(source_prop)
+        if source_value is not None:
+            graph.setPropertyValue(target_prop, source_value)
+    except _SD_API_ERRORS as error:
+        warnings.append(("value", _error_text(error)))
+    return new_id, warnings
+
+
+def duplicate_exposed_parameter(graph, source_id, new_id, new_label):
+    """在 Graph Input Parameters 中创建一个真实参数副本。"""
+    with _undo_group("MaxSDPlugin 复制曝光参数"):
+        return _duplicate_exposed_parameter(
+            graph, source_id, new_id, new_label)
+
+
+def duplicate_exposed_parameters(graph, copies):
+    """批量创建真实参数副本，返回 {created, failed, warnings}。
+
+    copies 每项为 {source_id, new_id, new_label}。所有成功创建项放在一个
+    UndoGroup 中，可在 Designer 里一次 Ctrl+Z 撤销。
+    """
+    summary = {"created": [], "failed": [], "warnings": []}
+    if graph is None or not copies:
+        return summary
+    try:
+        with _undo_group("MaxSDPlugin 批量复制曝光参数"):
+            for item in copies:
+                source_id = item.get("source_id")
+                new_id = item.get("new_id")
+                try:
+                    created_id, warnings = _duplicate_exposed_parameter(
+                        graph, source_id, new_id, item.get("new_label"))
+                    summary["created"].append(created_id)
+                    for annotation_id, reason in warnings:
+                        summary["warnings"].append(
+                            (created_id, annotation_id, reason))
+                except _SD_API_ERRORS as error:
+                    summary["failed"].append(
+                        (source_id, new_id, _error_text(error)))
+    except _SD_API_ERRORS as error:
+        print(f"{_LOG} 批量复制参数时出现异常，已尽量完成: {_error_text(error)}")
+    return summary
+
+
+def remove_copy_text(text):
+    """移除独立的 Copy 单词，并清理多余空格、下划线和连字符。"""
+    original = "" if text is None else str(text)
+    cleaned = re.sub(
+        r"(?i)(?<![A-Za-z0-9])copy(?![A-Za-z0-9])", "", original)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"_+", "_", cleaned)
+    cleaned = re.sub(r"-+", "-", cleaned)
+    return cleaned.strip(" _-")
+
+
+def _replace_get_variable_references(graph, old_id, new_id):
+    """把全图属性函数中的 Get Variable 从 old_id 更新为 new_id。"""
+    changed = 0
+    errors = []
+    categories = [
+        SDPropertyCategory.Input,
+        SDPropertyCategory.Output,
+        SDPropertyCategory.Annotation,
+    ]
+    try:
+        nodes = graph.getNodes()
+    except _SD_API_ERRORS as error:
+        return changed, [("<nodes>", _error_text(error))]
+    for node_index in range(len(nodes)):
+        node = nodes[node_index]
+        for category in categories:
+            try:
+                properties = node.getProperties(category)
+            except _SD_API_ERRORS:
+                continue
+            for property_index in range(len(properties)):
+                try:
+                    property_graph = node.getPropertyGraph(
+                        properties[property_index])
+                except _SD_API_ERRORS:
+                    property_graph = None
+                if property_graph is None:
+                    continue
+                try:
+                    function_nodes = property_graph.getNodes()
+                except _SD_API_ERRORS:
+                    continue
+                for function_index in range(len(function_nodes)):
+                    function_node = function_nodes[function_index]
+                    if not _is_get_function_node(function_node):
+                        continue
+                    try:
+                        current_value = function_node.getPropertyValueFromId(
+                            "__constant__", SDPropertyCategory.Input)
+                        if scalar_value_to_text(_value_to_str(current_value)) != old_id:
+                            continue
+                        new_value = _new_string_value(new_id)
+                        if new_value is None:
+                            raise RuntimeError("无法创建新的 Get Variable 字符串值")
+                        function_node.setInputPropertyValueFromId(
+                            "__constant__", new_value)
+                        changed += 1
+                    except _SD_API_ERRORS as error:
+                        errors.append((old_id, _error_text(error)))
+    return changed, errors
+
+
+def remove_copy_from_parameters(graph, parameter_ids):
+    """去除勾选参数 Label 和 ID 中独立的 Copy，返回迁移汇总。
+
+    SDProperty ID 不支持原地重命名，因此 ID 变化时创建无 Copy 的新参数、
+    更新 Get Variable 引用后删除旧参数。整批操作可一次 Ctrl+Z 撤销。
+    """
+    summary = {"renamed": [], "label_only": [], "unchanged": [], "failed": []}
+    if graph is None or not parameter_ids or SDPropertyCategory is None:
+        return summary
+    requested_ids = list(dict.fromkeys(parameter_ids))
+    plans = []
+    planned_new_ids = []
+    for old_id in requested_ids:
+        try:
+            prop = graph.getPropertyFromId(old_id, SDPropertyCategory.Input)
+        except _SD_API_ERRORS as error:
+            summary["failed"].append((old_id, _error_text(error)))
+            continue
+        if prop is None:
+            summary["failed"].append((old_id, "当前图中未找到参数"))
+            continue
+        new_id = remove_copy_text(old_id)
+        try:
+            old_label = prop.getLabel() or old_id
+        except _SD_API_ERRORS:
+            old_label = old_id
+        new_label = remove_copy_text(old_label) or new_id
+        if not new_id:
+            summary["failed"].append((old_id, "去除 Copy 后 ID 为空"))
+            continue
+        if new_id != old_id:
+            try:
+                conflict = graph.getPropertyFromId(
+                    new_id, SDPropertyCategory.Input)
+            except _SD_API_ERRORS as error:
+                summary["failed"].append((old_id, _error_text(error)))
+                continue
+            if conflict is not None or new_id in planned_new_ids:
+                summary["failed"].append((old_id, f"目标 ID 已存在: {new_id}"))
+                continue
+            planned_new_ids.append(new_id)
+        plans.append((prop, old_id, old_label, new_id, new_label))
+
+    try:
+        with _undo_group("MaxSDPlugin 去除参数 Copy"):
+            for prop, old_id, old_label, new_id, new_label in plans:
+                if new_id == old_id:
+                    if new_label == old_label:
+                        summary["unchanged"].append(old_id)
+                        continue
+                    changed, errors = _set_property_text_setting(
+                        graph, prop, "label", new_label)
+                    if changed:
+                        summary["label_only"].append(old_id)
+                    if errors:
+                        summary["failed"].append(
+                            (old_id, "; ".join(errors)))
+                    continue
+                created_prop = None
+                try:
+                    created_id, warnings = _duplicate_exposed_parameter(
+                        graph, old_id, new_id, new_label)
+                    created_prop = graph.getPropertyFromId(
+                        created_id, SDPropertyCategory.Input)
+                    reference_count, reference_errors = (
+                        _replace_get_variable_references(graph, old_id, new_id))
+                    if reference_errors:
+                        raise RuntimeError("; ".join(
+                            reason for _, reason in reference_errors))
+                    graph.deleteProperty(prop)
+                    summary["renamed"].append(
+                        (old_id, created_id, reference_count, len(warnings)))
+                except _SD_API_ERRORS as error:
+                    rollback_errors = []
+                    _, reference_rollback_errors = (
+                        _replace_get_variable_references(graph, new_id, old_id))
+                    rollback_errors.extend(
+                        reason for _, reason in reference_rollback_errors)
+                    if created_prop is None:
+                        try:
+                            created_prop = graph.getPropertyFromId(
+                                new_id, SDPropertyCategory.Input)
+                        except _SD_API_ERRORS as rollback_error:
+                            rollback_errors.append(_error_text(rollback_error))
+                    if created_prop is not None:
+                        try:
+                            graph.deleteProperty(created_prop)
+                        except _SD_API_ERRORS as rollback_error:
+                            rollback_errors.append(_error_text(rollback_error))
+                    reason = _error_text(error)
+                    if rollback_errors:
+                        reason += "; 回滚警告: " + "; ".join(rollback_errors)
+                    summary["failed"].append((old_id, reason))
+    except _SD_API_ERRORS as error:
+        print(f"{_LOG} 去除参数 Copy 时出现异常: {_error_text(error)}")
+    return summary
+
+
+def update_exposed_parameter_settings(graph, updates):
+    """批量更新曝光参数的 Label、Group 和标量当前值。
+
+    updates 每项包含 id/label/group/value/type/value_changed。返回
+    {updated, skipped}，整批操作可在 SD 中一次 Ctrl+Z 撤销。
+    """
+    summary = {"updated": [], "skipped": []}
+    if graph is None or not updates or SDPropertyCategory is None:
+        return summary
+
+    def _update_one(item):
+        parameter_id = item.get("id")
+        try:
+            prop = graph.getPropertyFromId(parameter_id, SDPropertyCategory.Input)
+        except _SD_API_ERRORS:
+            prop = None
+        if prop is None:
+            summary["skipped"].append((parameter_id, "当前图中未找到参数"))
+            return
+        field_errors = []
+        changed = False
+        for annotation_id, text in (
+                ("label", item.get("label") or parameter_id),
+                ("group", item.get("group") or "")):
+            field_changed, errors = _set_property_text_setting(
+                graph, prop, annotation_id, text)
+            changed = changed or field_changed
+            field_errors.extend(
+                f"{annotation_id}: {reason}" for reason in errors)
+        if item.get("value_changed"):
+            try:
+                value = _build_sdvalue(item.get("type"), item.get("value"))
+                if value is None:
+                    raise ValueError("该类型的当前值不支持文本批量修改")
+                graph.setPropertyValue(prop, value)
+                changed = True
+            except _SD_API_ERRORS as error:
+                field_errors.append(f"当前值: {_error_text(error)}")
+        if changed:
+            summary["updated"].append(parameter_id)
+        if field_errors:
+            summary["skipped"].append(
+                (parameter_id, "; ".join(field_errors)))
+
+    try:
+        with _undo_group("MaxSDPlugin 批量修改曝光参数设置"):
+            for item in updates:
+                _update_one(item)
+    except _SD_API_ERRORS as error:
+        print(f"{_LOG} 批量修改参数设置时出现异常，已尽量完成: {_error_text(error)}")
+    return summary
 
 
 def _is_get_function_node(fnode):
@@ -539,47 +987,20 @@ def _node_label(node):
     return f"{lbl} (id:{ident})" if ident else (lbl or "<未知节点>")
 
 
-def _is_ghost_instance(node):
-    """判断是否为子图丢失的 Ghost 实例（Cooker 报 Can't find subgraph）。
-
-    子图实例引用的子图（getReferencedResource）丢失时，节点变成 Ghost：
-    引用资源为 None，且拿不到 I/O 定义；cook 报 "Can't find subgraph"。
-    """
-    try:
-        if hasattr(node, "getReferencedResource") and node.getReferencedResource() is not None:
-            return False
-        d = node.getDefinition()
-        if d is None:
-            return True
-        lbl = (d.getLabel() or "").lower()
-        ins = len(d.getProperties(SDPropertyCategory.Input)) if SDPropertyCategory else 0
-        outs = len(d.getProperties(SDPropertyCategory.Output)) if SDPropertyCategory else 0
-        return ("ghost" in lbl) or (ins == 0 and outs == 0)
-    except Exception:
-        return False
-
-
 def collect_broken_nodes(graph):
-    """扫描全图，列出有问题的节点及其警告类型。
+    """列出曝光参数输入已丢失、会显示 Empty variable 警告的节点。
 
     返回 list[dict]: {id, label, prop, warnings} ——
       - id: 节点标识，用于 Goto / 删除；
-      - prop: 首个损坏属性名（可空）；
-      - warnings: 警告类型列表，如 ["Empty variable", "缺失资源", "未连接输出", "悬挂节点"]。
+      - prop: 首个丢失曝光参数输入的节点属性名；
+      - warnings: ["参数输入丢失（Empty variable）"]。
+    正常的曝光参数函数不算损坏；资源、连线等其它警告由 Publish Checker 负责。
     只读，不修改图。
     """
-    import os as _os
     out = []
     if graph is None or SDPropertyCategory is None:
         return out
     valid_ids = _graph_input_ids(graph)
-    output_ids = set()
-    try:
-        outs = graph.getOutputNodes()
-        for i in range(len(outs)):
-            output_ids.add(outs[i].getIdentifier())
-    except Exception:
-        pass
     categories = [SDPropertyCategory.Input, SDPropertyCategory.Output, SDPropertyCategory.Annotation]
     try:
         nodes = graph.getNodes()
@@ -593,9 +1014,7 @@ def collect_broken_nodes(graph):
             nid = node.getIdentifier() or ""
         except Exception:
             continue
-        warnings = []
         broken_prop = ""
-        # 1) Empty variable / 悬空 Get 函数
         for cat in categories:
             try:
                 props = node.getProperties(cat)
@@ -615,48 +1034,8 @@ def collect_broken_nodes(graph):
             if broken_prop:
                 break
         if broken_prop:
-            warnings.append("Empty variable")
-        # 2) 缺失资源：节点引用的资源不存在（外部文件丢失或 pkg:/// 依赖找不到）
-        try:
-            d = node.getDefinition()
-            did = (d.getId() or "").lower() if d else ""
-            res = None
-            if hasattr(node, "getReferencedResource"):
-                res = node.getReferencedResource()
-            if "bitmap" in did or "svg" in did:
-                if res is None:
-                    warnings.append("缺失资源")
-                else:
-                    path = res.getFilePath() if hasattr(res, "getFilePath") else ""
-                    if path and not path.startswith("pkg://") and not _os.path.exists(path):
-                        warnings.append("缺失资源")
-            if "缺失资源" not in warnings and res is not None:
-                path = res.getFilePath() if hasattr(res, "getFilePath") else ""
-                if path and not path.startswith("pkg://") and not _os.path.exists(path):
-                    warnings.append("缺失资源")
-            # 子图实例引用的子图丢失 → Ghost Instance（Can't find subgraph）。
-            # 原子节点（bitmap/svg 等）有 I/O 不会判 ghost；缺子图实例无 I/O 或带 ghost 标签。
-            if "bitmap" not in did and "svg" not in did and _is_ghost_instance(node):
-                warnings.append("缺失子图(Ghost)")
-        except Exception:
-            pass
-        # 3 & 4) 未连接输出 / 悬挂节点
-        try:
-            conn_out = 0
-            for p in node.getProperties(SDPropertyCategory.Output):
-                conn_out += len(node.getPropertyConnections(p))
-            if nid in output_ids:
-                conn_in = sum(len(node.getPropertyConnections(p))
-                              for p in node.getProperties(SDPropertyCategory.Input))
-                if conn_in == 0:
-                    warnings.append("未连接输出")
-            elif conn_out == 0:
-                warnings.append("悬挂节点")
-        except Exception:
-            pass
-        if warnings:
             out.append({"id": nid, "label": _node_label(node), "prop": broken_prop,
-                        "warnings": warnings})
+                        "warnings": ["参数输入丢失（Empty variable）"]})
     return out
 
 
@@ -714,20 +1093,21 @@ def _build_sdvalue(type_id, raw):
     if raw is None:
         return None
     tid = (type_id or "").lower()
+    scalar_text = scalar_value_to_text(raw)
     try:
         if "string" in tid:
             from sd.api.sdvaluestring import SDValueString
-            return SDValueString.sNew(_strip_quotes(str(raw)))
+            return SDValueString.sNew(scalar_text)
         if "bool" in tid:
             from sd.api.sdvaluebool import SDValueBool
-            return SDValueBool.sNew(str(raw).strip().lower() in ("1", "true", "yes"))
+            return SDValueBool.sNew(scalar_text.lower() in ("1", "true", "yes"))
         # 整型：放在 float 判断之前，避免被 "float" 子串误命中
         if tid.endswith("int") or tid in ("int", "integer") or "int1" in tid:
             from sd.api.sdvalueint import SDValueInt
-            return SDValueInt.sNew(int(float(str(raw).strip())))
+            return SDValueInt.sNew(int(float(scalar_text)))
         if "float" in tid and not any(v in tid for v in ("float2", "float3", "float4")):
             from sd.api.sdvaluefloat import SDValueFloat
-            return SDValueFloat.sNew(float(str(raw).strip()))
+            return SDValueFloat.sNew(float(scalar_text))
     except Exception as e:
         print(f"{_LOG} 还原值失败（type={type_id}, raw={raw}）: {e}")
         return None

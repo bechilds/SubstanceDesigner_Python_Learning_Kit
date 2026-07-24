@@ -5,4 +5,4 @@
 这样 Plugin Manager 卸载→加载即可刷新菜单显示的版本号，无需重启 SD。
 """
 
-VERSION = "0.8.0"
+VERSION = "0.14.1"

@@ -21,7 +21,13 @@ def _add_category(parent_menu, main_win, ctx, title, import_path, attr, fail_tit
     """通用：在 parent_menu 下建一个子菜单，延迟导入功能模块；失败时做成可点击错误项。"""
     QtWidgets = ctx["QtWidgets"]
     QAction = sdcompat.get_qaction()
-    submenu = parent_menu.addMenu(title)
+    submenu = None
+    for existing_action in parent_menu.actions():
+        if existing_action.text() == title and existing_action.menu() is not None:
+            submenu = existing_action.menu()
+            break
+    if submenu is None:
+        submenu = parent_menu.addMenu(title)
     try:
         import importlib
         mod = importlib.import_module(import_path, ctx["package"])
@@ -84,7 +90,9 @@ def build_menu(menu, main_win, ctx):
 
     # 功能分类：新增分类只在此追加一行
     _add_category(menu, main_win, ctx, "Output", ".output", "show_window", "曝光参数")
+    _add_category(menu, main_win, ctx, "Output", ".batch_merge_tex_channel", "show_window", "BatchMergeTexChannel")
     _add_category(menu, main_win, ctx, "Edit", ".frame_color_modify", "show_window", "FrameColorModify")
+    _add_category(menu, main_win, ctx, "Edit", ".auto_add_expose_comment", "show_window", "AutoAddExposeCommitToNode")
     _add_category(menu, main_win, ctx, "File", ".save_with_resource", "show_window", "SaveWithResrouce")
     _add_category(menu, main_win, ctx, "Debug", ".debug", "show_window", "Publish Checker")
     _add_category(menu, main_win, ctx, "Analysis", ".sbs_file_reporter", "show_window", "SBSFileRepoter")

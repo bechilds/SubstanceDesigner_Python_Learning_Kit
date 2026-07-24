@@ -16,6 +16,12 @@
 │   │   ├── exposed_parameters_window.py  # 曝光参数对话框 UI
 │   │   ├── output_data.py                # 枚举参数 + OutputData 读写
 │   │   └── README.md
+│   ├── batch_merge_tex_channel/ # Output/BatchMergeTexChannel（批量合并贴图通道）
+│   │   ├── __init__.py
+│   │   ├── logic.py              # 文件匹配、SBS 接口校验、计算与保存
+│   │   ├── window.py             # 配置、预览与批处理 UI
+│   │   └── README.md
+│   ├── BatchMergeTexChannel.sbs  # 通道合并处理资源
 │   ├── debug/           # Debug 功能分类（依赖/发布警告检查）
 │   │   ├── __init__.py
 │   │   ├── check_dependencies.py         # 发布警告扫描 + UI
@@ -23,6 +29,10 @@
 │   ├── frame_color_modify/ # Edit/FrameColorModify（批量修改 Frame RGBA）
 │   │   ├── __init__.py
 │   │   ├── frame_color_modify.py
+│   │   └── README.md
+│   ├── auto_add_expose_comment/ # Edit/AutoAddExposeCommitToNode（曝光参数描述）
+│   │   ├── __init__.py
+│   │   ├── auto_add_expose_comment.py
 │   │   └── README.md
 │   ├── save_with_resource/ # File/SaveWithResrouce（保存副本并收集外部文件）
 │   │   ├── __init__.py
@@ -49,9 +59,11 @@
 MaxSDPlugin
 ├─ 关于 / 版本信息
 ├─ Output
-│  └─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（删除重置为 TODO）
+│  ├─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（删除重置为 TODO）
+│  └─ BatchMergeTexChannel # 按关键字分组并批量合并贴图通道
 ├─ Edit
-│  └─ FrameColorModify # 统一修改当前画布全部 Frame 的颜色和透明度
+│  ├─ FrameColorModify # 统一修改当前画布全部 Frame 的颜色和透明度
+│  └─ AutoAddExposeCommitToNode # 给使用曝光参数的节点创建或更新 Comment
 ├─ File
 │  └─ SaveWithResrouce # 保存 SBS 副本并收集外部依赖与 Resource
 └─ Debug
