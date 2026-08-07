@@ -6,10 +6,10 @@
 
 | 菜单 | 功能 |
 |---|---|
-| `Output/曝光参数` | 管理当前 Graph 的已暴露参数，批量创建并按关键字命名参数副本，通过独立窗口批量修改设置，修复丢失输入的参数节点 |
+| `Output/曝光参数` | 管理、排序当前 Graph 的已暴露参数，标记未被节点引用的空参数，并修复真正丢失输入的节点 |
 | `Output/BatchMergeTexChannel` | 按文件名关键字分组贴图，通过处理 SBS 批量合并通道并导出 |
 | `Edit/FrameColorModify` | 汇总当前画布 Frame，并统一修改颜色与透明度 |
-| `Edit/AutoAddExposeCommitToNode` | 为当前 SBS 文件中使用曝光参数的节点创建或更新描述 Comment |
+| `Edit/AutoAddExposeCommitToNode` | 为当前 SBS 文件中使用曝光参数的节点创建或更新描述 Comment，并按 `分组|-参数` 写入参数名称 |
 | `File/SaveWithResrouce` | 保存 SBS 副本并收集非官方、非团队库的外部文件 |
 | `Debug/Publish Checker` | 检查发布依赖、资源、悬挂节点和未连接输出 |
 | `Analysis/SBSFileRepoter` | 审计当前 Graph 的静态复杂度、潜在分支和高成本节点 |
@@ -24,6 +24,14 @@
 
 窗口顶部会显示“工具功能正常/异常”。只有随附 SBS 的 5 个贴图输入、4 组共 32 个互斥通道开关和 `output` 完整一致时，才会开放扫描和批处理；完整接口和命名示例见 [batch_merge_tex_channel/README.md](batch_merge_tex_channel/README.md)。
 
+## 曝光参数分组排序工作流
+
+1. 打开 `Output/曝光参数`，点击“参数分组排序”；排序树只收集非连接型 INPUT PARAMETERS。
+2. 上移或下移顶级 Group，并在确认框核对唯一目标 SBS 路径和 Graph ID。
+3. 应用后工具保存并备份当前 SBS，只重排目标 Graph 的 `<paraminputs>`，再重新加载 Package。
+
+INPUTS、OUTPUTS、同一 SBS 的其他 Graph，以及 Explorer 中其他 Package 均不参与处理。完整安全约束见 [expose_param_sorting/README.md](expose_param_sorting/README.md)。
+
 ## 目录
 
 ```text
@@ -36,6 +44,7 @@ MaxSDPlugins/
 ├── BatchMergeTexChannel.sbs
 ├── frame_color_modify/
 ├── auto_add_expose_comment/
+├── expose_param_sorting/
 ├── save_with_resource/
 ├── debug/
 ├── sbs_file_reporter/

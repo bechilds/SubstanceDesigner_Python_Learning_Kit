@@ -1,6 +1,6 @@
 # 曝光参数 (Exposed Parameters)
 
-管理当前图的「已曝露输入参数」：按分组枚举、复制并创建真实的新参数、通过独立窗口批量修改参数设置、把快照缓存/导出为 `OutputData.json`、删除（取消曝露），以及加载历史 OutputData 把值应用回当前图。
+管理当前图的「已曝露输入参数」：按分组枚举和排序、标记未被节点引用的空参数、复制并创建真实的新参数、批量修改设置、缓存/导出、删除（取消曝露），以及检查画布损坏节点。
 菜单位置：`MaxSDPlugin/Output/曝光参数`。
 
 ---
@@ -9,6 +9,8 @@
 
 - **按分组列出**当前图（`getCurrentGraph()`）的已曝露参数，**只含「INPUT PARAMETERS」与「INPUTS」两类**（排除 `$outputsize` 等以 `$` 开头的内置基础参数），并按 SD 的分组（`group` 注解）保留层级。分类与 Group 节点支持三态勾选，选择或取消组会同步组内全部参数；也支持全选 / 全不选。
   - `prop.isConnectable()` 为 `True` → 归入 **INPUTS**（图像输入）；为 `False` → 归入 **INPUT PARAMETERS**（数值型参数）。
+- **标记空参数**：扫描当前 Graph 全部节点属性函数中的 Get Variable；没有被任何节点引用的已暴露参数在“引用状态”列标记为“未被节点引用”。
+- **参数分组排序**：曝光参数区域内直接打开 ExposeParameterAutoSorting，按 Group 调整 INPUT PARAMETERS 顺序；排序包原公开入口继续保留供兼容调用。
 - **缓存到当前目录**：把当前已曝露参数快照写到 `.sbs` 同目录的 `OutputData.json`。
 - **导出 OutputData…**：把快照导出到用户选择的位置（JSON）。
 - **复制勾选参数**：支持同时勾选一个或多个 INPUT PARAMETERS 参数。弹窗按行预览 `源 ID / 源 Label / 新 ID / 新 Label`，可逐行编辑，也可设置关键字批量替换新 ID、新 Label 或两者；确认后通过与 Designer 参数面板 `+` 对应的 `graph.newProperty()` 创建真实的新参数，再复制每个来源参数的类型、全部可读注解和 SD 原生当前值。整批创建放在一个 UndoGroup 中，可按 **Ctrl+Z** 一次撤销。图像 INPUTS 因属性类型本身可连接，不能强制复制到 INPUT PARAMETERS，失败项会单独汇总。
@@ -26,7 +28,7 @@
   - 删除前**自动备份**一份 OutputData 到 `.sbs` 同目录，便于回滚。
   - 操作前有二次确认对话框。
 - **重置损坏函数**：勾选下方列表后只重置勾选项；**未勾选则处理全图**——把丢失曝光参数输入并出现 Empty variable 警告的 Get 函数重置回常量值。同样包 UndoGroup 可撤销。
-- **有曝光参数的节点列表**：面板下方只列出曝光参数输入已丢失、会在 Substance Designer 画布显示警告图标的节点。正常曝光参数绑定不算损坏；缺失资源、Ghost、未连接输出和悬挂节点继续由 `Debug/Publish Checker` 检查。列表列名为「有曝光参数的节点 / 对应的损坏节点属性 / 警告类型」，支持勾选、Goto 和删除。
+- **画布损坏节点列表**：与已暴露参数区域使用独立标题和可拖动分隔器。只列出曝光参数输入已丢失、且对应节点属性没有非空输入值的节点；已经正确取得输入值（包括 `0` 和 `False`）时不再报告“参数输入丢失”，与 Designer 的警告逻辑保持一致。列表支持勾选、Goto 和删除。
 - **加载历史…**：读取一个历史 `OutputData.json`，把其中记录的值**应用回当前图中仍然存在的同名参数**（`graph.setPropertyValue()`，同样包 UndoGroup 可撤销）。完成后弹窗汇总「已还原 / 已不存在无法还原 / 类型不支持」三类计数。
 
 ---
@@ -44,7 +46,7 @@ output/
 | 文件 / 函数 | 职责 |
 |---|---|
 | `output_data.get_current_graph()` | 取当前图 |
-| `output_data.collect_exposed_parameters(graph)` | 枚举已暴露参数（排除基础参数）→ list[dict]，带 `category`/`group` |
+| `output_data.collect_exposed_parameters(graph)` | 枚举已暴露参数（排除基础参数）→ list[dict]，带 `category`/`group`/`referenced` |
 | `output_data.group_parameters(params)` | 组织成「分类 → 分组 → 参数」结构供 UI 渲染 |
 | `output_data.duplicate_exposed_parameter(graph, source_id, new_id, new_label)` | 用 `newProperty` 创建真实副本，复制类型、注解和 SD 原生当前值 |
 | `output_data.duplicate_exposed_parameters(graph, copies)` | 在一个 UndoGroup 中批量创建真实参数副本，返回成功/失败/注解警告汇总 |
@@ -52,7 +54,7 @@ output/
 | `output_data.remove_copy_from_parameters(graph, ids)` | 清理 Label/ID 的独立 Copy；ID 变化时迁移 Get Variable 引用并删除旧参数，失败时回滚 |
 | `output_data.delete_exposed_parameters(graph, ids)` | 先 `deletePropertyGraph` 重置依赖节点参数，再 `deleteProperty` 取消暴露，删后再扫一遍兜底；包 UndoGroup，返回 (deleted, failed, reset) |
 | `output_data.repair_broken_node_functions(graph)` | 扫描全图重置变量名已空的损坏 Get 函数，返回重置个数；包 UndoGroup |
-| `output_data.collect_broken_nodes(graph)` | 只读列出曝光参数输入丢失、画布上报 Empty variable 的节点 → [{id,label,prop,warnings}] |
+| `output_data.collect_broken_nodes(graph)` | 只读列出 Get Variable 损坏且节点属性没有非空输入值的节点 |
 | `output_data.goto_node(graph, id)` | 用 `SDUIMgr.focusGraphNode` 把视图居中到该节点 |
 | `output_data.apply_output_data(graph, data)` | 把 OutputData 的值应用回现存参数，返回 {restored, missing, skipped} |
 | `output_data.get_default_output_data_path(graph)` | 推算 `.sbs` 同目录的 `OutputData.json` 路径 |
@@ -74,7 +76,7 @@ OutputData JSON 结构：
       "id": "...", "label": "...", "type": "...",
       "default": "...", "value": "...",
       "connectable": false, "category": "parameters", "group": "...",
-      "selected": false
+      "referenced": true, "selected": false
     }
   ]
 }

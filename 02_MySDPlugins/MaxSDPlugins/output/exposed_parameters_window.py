@@ -472,7 +472,7 @@ if QtWidgets is not None:
             super().__init__(parent)
             self._syncing_parameter_checks = False
             self.setWindowTitle("曝光参数 - MaxSDPlugin")
-            self.resize(600, 520)
+            self.resize(900, 760)
             self._build_ui()
             self._refresh()
 
@@ -480,17 +480,25 @@ if QtWidgets is not None:
         def _build_ui(self):
             layout = QtWidgets.QVBoxLayout(self)
 
+            content_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self)
+            layout.addWidget(content_splitter, 1)
+
+            parameters_group = QtWidgets.QGroupBox("已暴露参数", self)
+            parameters_layout = QtWidgets.QVBoxLayout(parameters_group)
+            content_splitter.addWidget(parameters_group)
+
             self._info_label = QtWidgets.QLabel(self)
             self._info_label.setWordWrap(True)
-            layout.addWidget(self._info_label)
+            parameters_layout.addWidget(self._info_label)
 
             # 分组树：分类 → 分组 → 参数（参数为可勾选叶子）
             self._tree = QtWidgets.QTreeWidget(self)
-            self._tree.setHeaderLabels(["参数", "ID", "当前值"])
+            self._tree.setHeaderLabels(["参数", "ID", "当前值", "引用状态"])
             self._tree.setColumnWidth(0, 240)
             self._tree.setColumnWidth(1, 160)
+            self._tree.setColumnWidth(3, 120)
             self._tree.itemChanged.connect(self._parameter_item_changed)
-            layout.addWidget(self._tree, 1)
+            parameters_layout.addWidget(self._tree, 1)
 
             # —— 曝光参数列表专属按钮：刷新 / 全选 / 全不选 / 删除勾选 / 缓存 / 导出 / 加载 ——
             exp_row = QtWidgets.QHBoxLayout()
@@ -500,12 +508,15 @@ if QtWidgets is not None:
             self._btn_copy = QtWidgets.QPushButton("复制勾选参数", self)
             self._btn_replace = QtWidgets.QPushButton("批量替换参数设置", self)
             self._btn_remove_copy = QtWidgets.QPushButton("去除 Copy", self)
+            self._btn_sort = QtWidgets.QPushButton("参数分组排序", self)
             self._btn_copy.setToolTip(
                 "批量复制所有勾选参数；创建前可按关键字替换新 ID 和新 Label。")
             self._btn_replace.setToolTip(
                 "勾选目标参数，打开窗口按关键字或逐行修改 Label、Group 和当前值。")
             self._btn_remove_copy.setToolTip(
                 "批量去除勾选参数 Label 和 ID 中独立的 Copy；ID 通过安全迁移实现。")
+            self._btn_sort.setToolTip(
+                "按 Group 调整 INPUT PARAMETERS 顺序；会备份并重载当前 SBS。")
             self._btn_delete = QtWidgets.QPushButton("删除勾选项", self)
             self._btn_cache = QtWidgets.QPushButton("缓存到当前目录", self)
             self._btn_export = QtWidgets.QPushButton("导出…", self)
@@ -516,26 +527,31 @@ if QtWidgets is not None:
             self._btn_copy.clicked.connect(self._copy_current_parameter)
             self._btn_replace.clicked.connect(self._replace_checked_parameter_settings)
             self._btn_remove_copy.clicked.connect(self._remove_copy_checked)
+            self._btn_sort.clicked.connect(self._open_parameter_sorting)
             self._btn_delete.clicked.connect(self._delete_checked)
             self._btn_cache.clicked.connect(self._cache)
             self._btn_export.clicked.connect(self._export)
             self._btn_load.clicked.connect(self._load_history)
             for b in (self._btn_refresh, self._btn_check_all, self._btn_uncheck_all,
-                      self._btn_copy, self._btn_replace, self._btn_remove_copy):
+                      self._btn_copy, self._btn_replace, self._btn_remove_copy,
+                      self._btn_sort):
                 exp_row.addWidget(b)
             exp_row.addStretch(1)
-            layout.addLayout(exp_row)
+            parameters_layout.addLayout(exp_row)
 
             file_row = QtWidgets.QHBoxLayout()
             for b in (self._btn_delete, self._btn_cache, self._btn_export, self._btn_load):
                 file_row.addWidget(b)
             file_row.addStretch(1)
-            layout.addLayout(file_row)
+            parameters_layout.addLayout(file_row)
 
             # 损坏节点（画布上报 Empty variable 的节点）：可勾选；双击/右键 Goto 定位
+            broken_group = QtWidgets.QGroupBox("画布损坏节点", self)
+            broken_layout = QtWidgets.QVBoxLayout(broken_group)
+            content_splitter.addWidget(broken_group)
             self._broken_label = QtWidgets.QLabel(self)
             self._broken_label.setWordWrap(True)
-            layout.addWidget(self._broken_label)
+            broken_layout.addWidget(self._broken_label)
             self._broken_tree = QtWidgets.QTreeWidget(self)
             self._broken_tree.setHeaderLabels(
                 ["有曝光参数的节点", "对应的损坏节点属性", "警告类型"])
@@ -544,7 +560,7 @@ if QtWidgets is not None:
             self._broken_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
             self._broken_tree.customContextMenuRequested.connect(self._broken_context_menu)
             self._broken_tree.itemDoubleClicked.connect(lambda *_: self._goto_broken())
-            layout.addWidget(self._broken_tree, 1)
+            broken_layout.addWidget(self._broken_tree, 1)
 
             # —— 画布损坏节点列表专属按钮：刷新 / 全选 / 全不选 / 重置函数 ——
             brk_row = QtWidgets.QHBoxLayout()
@@ -566,7 +582,8 @@ if QtWidgets is not None:
                       self._btn_brk_uncheck_all, self._btn_repair, self._btn_del_node):
                 brk_row.addWidget(b)
             brk_row.addStretch(1)
-            layout.addLayout(brk_row)
+            broken_layout.addLayout(brk_row)
+            content_splitter.setSizes([470, 250])
 
             # 关闭
             close_row = QtWidgets.QHBoxLayout()
@@ -701,15 +718,27 @@ if QtWidgets is not None:
                             leaf = QtWidgets.QTreeWidgetItem(
                                 parent,
                                 [p.get("label") or p.get("id"), p.get("id"),
-                                 str(p.get("value"))],
+                                   str(p.get("value")),
+                                   "已被节点引用" if p.get("referenced")
+                                   else "未被节点引用"],
                             )
                             leaf.setFlags(
                                 QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable
                             )
                             leaf.setCheckState(0, QtCore.Qt.Unchecked)
                             leaf.setData(0, self._ID_ROLE, p.get("id"))
+                            if not p.get("referenced"):
+                                leaf.setToolTip(3, "当前 Graph 的节点属性函数没有引用此参数。")
             finally:
                 self._tree.blockSignals(False)
+
+        def _open_parameter_sorting(self):
+            """从曝光参数面板打开参数分组排序窗口。"""
+            try:
+                from ..expose_param_sorting import show_window
+                show_window(self)
+            except Exception as error:
+                self._warn(f"打开参数分组排序失败：{error}")
 
         def _parameter_item_changed(self, item, column):
             """组/分类勾选向下同步，参数变化向上汇总三态。"""

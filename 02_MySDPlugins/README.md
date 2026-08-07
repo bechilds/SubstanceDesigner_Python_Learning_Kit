@@ -34,6 +34,11 @@
 │   │   ├── __init__.py
 │   │   ├── auto_add_expose_comment.py
 │   │   └── README.md
+│   ├── expose_param_sorting/ # 曝光参数面板的分组排序子功能（仅排序 INPUT PARAMETERS）
+│   │   ├── __init__.py
+│   │   ├── sorting_logic.py
+│   │   ├── sorting_window.py
+│   │   └── README.md
 │   ├── save_with_resource/ # File/SaveWithResrouce（保存副本并收集外部文件）
 │   │   ├── __init__.py
 │   │   ├── save_with_resource.py
@@ -60,10 +65,11 @@ MaxSDPlugin
 ├─ 关于 / 版本信息
 ├─ Output
 │  ├─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（删除重置为 TODO）
+│  │                    # 内含参数分组排序、空参数标记和画布损坏节点检查
 │  └─ BatchMergeTexChannel # 按关键字分组并批量合并贴图通道
 ├─ Edit
 │  ├─ FrameColorModify # 统一修改当前画布全部 Frame 的颜色和透明度
-│  └─ AutoAddExposeCommitToNode # 给使用曝光参数的节点创建或更新 Comment
+│  ├─ AutoAddExposeCommitToNode # 给使用曝光参数的节点创建或更新 Comment
 ├─ File
 │  └─ SaveWithResrouce # 保存 SBS 副本并收集外部依赖与 Resource
 └─ Debug

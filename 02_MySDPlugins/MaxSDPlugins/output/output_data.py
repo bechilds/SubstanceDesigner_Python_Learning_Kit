@@ -138,6 +138,17 @@ def scalar_value_to_text(value):
     return _strip_quotes(text)
 
 
+def _property_has_nonempty_input_value(node, prop):
+    """节点属性已能读到非空输入值时返回 True；数值 0 和布尔 False 也属于有效值。"""
+    try:
+        value = node.getPropertyValue(prop)
+    except _SD_API_ERRORS:
+        return False
+    if value is None:
+        return False
+    return scalar_value_to_text(_value_to_str(value)) != ""
+
+
 def _read_group(graph, prop):
     """读取属性的分组（group 注解）。无分组 / 读取失败返回空串。
 
@@ -161,11 +172,48 @@ CATEGORY_LABELS = (
 )
 
 
+def _collect_node_referenced_parameter_ids(graph):
+    """返回节点属性函数中由 Get Variable 实际引用的 Graph 输入参数 ID。"""
+    referenced_ids = set()
+    if graph is None or SDPropertyCategory is None:
+        return referenced_ids
+    categories = [
+        SDPropertyCategory.Input,
+        SDPropertyCategory.Output,
+        SDPropertyCategory.Annotation,
+    ]
+    try:
+        nodes = graph.getNodes()
+    except _SD_API_ERRORS:
+        return referenced_ids
+    for node_index in range(len(nodes)):
+        node = nodes[node_index]
+        for category in categories:
+            try:
+                properties = node.getProperties(category)
+            except _SD_API_ERRORS:
+                continue
+            for property_index in range(len(properties)):
+                try:
+                    property_graph = node.getPropertyGraph(
+                        properties[property_index])
+                except _SD_API_ERRORS:
+                    property_graph = None
+                if property_graph is None:
+                    continue
+                try:
+                    names, _ = _collect_get_var_status(property_graph)
+                    referenced_ids.update(names)
+                except _SD_API_ERRORS:
+                    continue
+    return referenced_ids
+
+
 def collect_exposed_parameters(graph):
     """枚举图的已暴露输入参数，返回 list[dict]。
 
     仅包含「INPUT PARAMETERS」与「INPUTS」两类——即排除以 '$' 开头的内置基础参数。
-    每项: {id, label, type, default, value, connectable, category, group}。
+    每项: {id, label, type, default, value, connectable, category, group, referenced}。
     - connectable=True → 图像输入（INPUTS）；False → 数值型输入参数（INPUT PARAMETERS）。
     - category: "inputs" / "parameters"。
     - group: 该参数所属分组名（空串表示未分组）。
@@ -184,6 +232,7 @@ def collect_exposed_parameters(graph):
         count = len(props)
     except Exception:
         count = 0
+    referenced_ids = _collect_node_referenced_parameter_ids(graph)
 
     for i in range(count):
         try:
@@ -206,6 +255,7 @@ def collect_exposed_parameters(graph):
                 "connectable": connectable,
                 "category": CATEGORY_INPUTS if connectable else CATEGORY_PARAMETERS,
                 "group": _read_group(graph, prop),
+                "referenced": pid in referenced_ids,
             })
         except Exception as e:
             print(f"{_LOG} 跳过一个无法读取的参数: {e}")
@@ -789,7 +839,7 @@ def _collect_get_var_status(func_graph, valid_ids=None):
             has_empty = True
             continue
         try:
-            s = _strip_quotes(_value_to_str(cval)) or ""
+            s = scalar_value_to_text(_value_to_str(cval)) or ""
         except Exception:
             s = ""
         if s == "":
@@ -921,7 +971,9 @@ def _reset_broken_node_functions(graph, deleted_ids, node_ids=None):
                     continue
                 try:
                     names, has_empty = _collect_get_var_status(pg, valid_ids)
-                    if has_empty or (names & deleted):
+                    input_is_empty = not _property_has_nonempty_input_value(
+                        node, prop)
+                    if input_is_empty and (has_empty or (names & deleted)):
                         node.deletePropertyGraph(prop)
                         reset_count += 1
                 except Exception as e:
@@ -1026,7 +1078,8 @@ def collect_broken_nodes(graph):
                     if not pg:
                         continue
                     _, has_empty = _collect_get_var_status(pg, valid_ids)
-                    if has_empty:
+                    if has_empty and not _property_has_nonempty_input_value(
+                            node, props[j]):
                         broken_prop = props[j].getId()
                         break
                 except Exception:

@@ -2,6 +2,13 @@
 插件名称：MaxSDPlugin
 
 ## 更新记录（格式：日期 · vX.Y.Z · 改动 · 影响范围 · 是否需重启 SD）
+- 2026-08-04 · v0.16.0 · ExposeParameterAutoSorting 合并到 Output/曝光参数面板并移除独立 Edit 菜单项；已暴露参数与画布损坏节点改为独立分组和可调分隔区；参数树新增引用状态并标记未被节点引用的空参数；损坏 Get Variable 对应属性已取得非空输入值（含 0/False）时不再报告或重置“参数输入丢失” · output/+expose_param_sorting/+menu+版本+文档 · 功能、菜单和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-03 · v0.15.5 · AutoAddExposeCommitToNode 读取曝光参数的 Group 注解并写入 Comment，有分组时使用 `分组|-参数`（如 `Base|-Color`），无分组时保留 `-参数`；扫描表格和搜索同步支持分组 · auto_add_expose_comment/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-03 · v0.15.4 · 修复 ExposeParameterAutoSorting 仍将 `<paraminputs>` 中未显示的连接型 INPUTS 误判为错误：Designer 会把 INPUT PARAMETERS 与 INPUTS 同时序列化到 `<paraminputs>`；XML 算法改为目标槽位替换，只在 UI 选中的 INPUT PARAMETERS 原索引之间重排完整节点，未选中的 INPUTS 等节点保持原索引和内容不变 · expose_param_sorting/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-03 · v0.15.3 · 修复 ExposeParameterAutoSorting 扫描范围错误：`getProperties(Input)` 同时包含 INPUT PARAMETERS 与连接型 INPUTS，现按 `isConnectable()` 在数据入口严格过滤，只展示和排序非连接型 INPUT PARAMETERS；INPUTS 与 OUTPUTS 均不读取、不参与 XML 校验或修改，避免图像输入被误报为 SBS 缺失参数 · expose_param_sorting/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-03 · v0.15.2 · 收紧 ExposeParameterAutoSorting 执行范围：仅处理当前活动 Graph 所属的一个已加载 User Package 和该 Graph 对应的唯一 XML 节点，不遍历 Explorer 中其他 Package/Graph；扫描时记录 SBS 路径、Package UID 和 Graph ID，执行前二次比对活动范围，切换文件或 Graph 后自动中止；状态栏和确认框显示唯一目标范围 · expose_param_sorting/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-03 · v0.15.1 · 修复 ExposeParameterAutoSorting 将运行时可见但未序列化到当前 SBS `<paraminputs>` 的继承/动态输入误判为参数列表不一致：XML 排序现在只处理真实存在的 `<paraminput>`，安全跳过并汇总 UI 独有参数；若 SBS 存在 UI 未显示参数仍中止，避免破坏隐藏顺序 · expose_param_sorting/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-03 · v0.15.0 · 新增 Edit/ExposeParameterAutoSorting：扫描当前 Graph 的曝光参数并按 Group 树状展示，支持刷新、全部展开/收起及调整顶级分组顺序；应用时保存当前 Package、创建时间戳备份并卸载，通过原子重排 SBS XML 中完整 `<paraminput>` 节点保持 UID、类型、值、注解和引用不变，失败自动恢复备份并重新加载 · expose_param_sorting/+menu+版本+文档 · 功能、菜单和热重载版本无需重启，入口回退版本生效需重启
 - 2026-07-24 · v0.14.1 · 修复 BatchMergeTexChannel 在部分 Designer 版本中将完整 SBS 误报为“缺少贴图输入/输出”：契约检查不再依赖版本差异较大的 getProperties 集合枚举，改为按 5 个贴图输入、32 个开关和 output 的 Identifier 逐项调用 getPropertyFromId，并在 API 查询异常时显示真实原因；误禁用的 RGBA 来源选择会在检查通过后自动恢复 · batch_merge_tex_channel/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
 - 2026-07-24 · v0.14.0 · BatchMergeTexChannel 适配最终 SBS 接口：按最终输出 Channel R/G/B/A 建立 4 个来源组，每组在 ColorMap RGBA 与 GrayMap01-04 共 8 个来源中严格单选，处理时只将所选开关设为 True、同组其余保持 False；新增顶部“工具功能正常/异常”状态，只有 SBS 的 5 个贴图输入、32 个开关和 output 完整一致时才开放扫描与处理 · batch_merge_tex_channel/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启
 - 2026-07-24 · v0.13.0 · 曝光参数主树的分类/Group 节点新增三态勾选，可整组选择或取消；批量替换弹窗新增 Group 勾选项和逐行选择列，关键字预览及应用只处理勾选参数。新增“去除 Copy”，批量清理勾选参数 Label/ID 中独立的 Copy token；ID 通过创建新参数、迁移所有 Get Variable 引用并删除旧参数实现，失败时恢复引用并清理新参数，整批可单步撤销 · output/+版本+文档 · 功能和版本可热重载，入口回退版本生效需重启

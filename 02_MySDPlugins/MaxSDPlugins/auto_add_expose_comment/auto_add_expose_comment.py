@@ -19,6 +19,12 @@ except Exception:  # pragma: no cover - 仅普通 Python 环境
     SDGraphObjectComment = None
     SDPropertyCategory = None
 
+try:
+    from sd.api.apiexception import APIException
+    _SD_ERRORS = (Exception, APIException)
+except Exception:  # pragma: no cover - 仅普通 Python 环境
+    _SD_ERRORS = (Exception,)
+
 
 def _as_list(value):
     """把 SDArray 等可索引对象安全转换为 Python list。"""
@@ -110,6 +116,22 @@ def _referenced_parameter_ids(function_graph):
     return {item["parameter_id"] for item in references}
 
 
+def _parameter_group(graph, prop):
+    """读取曝光参数的 Group 注解；未分组或读取失败时返回空串。"""
+    try:
+        value = graph.getPropertyAnnotationValueFromId(prop, "group")
+        return _value_to_text(value).strip()
+    except _SD_ERRORS:
+        return ""
+
+
+def _parameter_comment_name(parameter):
+    """按 ``分组|-参数`` 格式生成单个曝光参数的 Comment 行。"""
+    label = parameter["label"]
+    group = parameter.get("group", "")
+    return f"{group}|-{label}" if group else f"-{label}"
+
+
 def _graph_parameters(graph):
     """返回当前 Graph 的非内置输入参数映射及读取错误。"""
     names = {}
@@ -126,6 +148,7 @@ def _graph_parameters(graph):
             names[parameter_id] = {
                 "id": parameter_id,
                 "label": str(prop.getLabel() or parameter_id),
+                "group": _parameter_group(graph, prop),
             }
         except Exception as error:
             diagnostics.append(f"读取一个 Graph Input Property 失败: {error}")
@@ -143,8 +166,8 @@ def collect_node_exposed_parameters(graph):
 
     返回 ``[(node, [name, ...]), ...]``，参数名称按首次发现顺序排列。
     """
-    parameter_names = _graph_parameter_names(graph)
-    if not parameter_names:
+    parameters, _ = _graph_parameters(graph)
+    if not parameters:
         return []
     result = []
     try:
@@ -165,8 +188,9 @@ def collect_node_exposed_parameters(graph):
                 function_graph = None
             if function_graph is not None:
                 referenced_ids.update(_referenced_parameter_ids(function_graph))
-        names = [name for parameter_id, name in parameter_names.items()
-                 if parameter_id in referenced_ids]
+        names = [_parameter_comment_name(parameter)
+                 for parameter_id, parameter in parameters.items()
+             if parameter_id in referenced_ids]
         if names:
             result.append((node, names))
     return result
@@ -249,8 +273,9 @@ def _find_node_comment(graph, node):
     return None
 
 
-def _comment_text(parameter_names):
-    return "Exposed Parameters:\n" + "\n".join(f"- {name}" for name in parameter_names)
+def _comment_text(parameters):
+    return "Exposed Parameters:\n" + "\n".join(
+        _parameter_comment_name(parameter) for parameter in parameters)
 
 
 def scan_package(current_graph):
@@ -333,7 +358,6 @@ def scan_package(current_graph):
                 continue
 
             parameter_items = list(matched.values())
-            parameter_names = [item["label"] for item in parameter_items]
             comment = _find_node_comment(graph, node)
             try:
                 existing_text = str(comment.getDescription() or "") if comment else ""
@@ -361,7 +385,7 @@ def scan_package(current_graph):
                 "existing_comment": comment,
                 "existing_text": existing_text,
                 "target_position": target_position,
-                "generated_text": _comment_text(parameter_names),
+                "generated_text": _comment_text(parameter_items),
             })
             stats["matched_nodes"] += 1
     return result
@@ -461,7 +485,7 @@ if QtWidgets is not None:
             search_layout.addWidget(QtWidgets.QLabel("搜索名称或 ID", self))
             self._search_edit = QtWidgets.QLineEdit(self)
             self._search_edit.setPlaceholderText(
-                "节点名称 / 节点 ID / 节点属性 / 曝光参数 ID / 显示名称")
+                "节点名称 / 节点 ID / 节点属性 / 曝光参数 ID / 分组 / 显示名称")
             self._search_edit.setClearButtonEnabled(True)
             self._search_edit.textChanged.connect(self._filter_plans)
             self._search_edit.returnPressed.connect(self._select_first_visible_plan)
@@ -473,7 +497,7 @@ if QtWidgets is not None:
             self._table = QtWidgets.QTableWidget(0, 9, self)
             self._table.setHorizontalHeaderLabels([
                 "选择", "Graph", "节点", "节点属性", "曝光参数 ID",
-                "显示名称", "已有 Comment", "计划操作", "目标位置",
+                "分组|显示名称", "已有 Comment", "计划操作", "目标位置",
             ])
             self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
             self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -570,7 +594,9 @@ if QtWidgets is not None:
                 check_item.setData(QtCore.Qt.UserRole, row)
                 self._table.setItem(row, 0, check_item)
                 parameter_ids = ", ".join(item["id"] for item in plan["parameters"])
-                parameter_labels = ", ".join(item["label"] for item in plan["parameters"])
+                parameter_labels = ", ".join(
+                    f"{item['group']}|{item['label']}" if item["group"] else item["label"]
+                    for item in plan["parameters"])
                 target_position = plan["target_position"]
                 position_text = (
                     f"({target_position[0]:.0f}, {target_position[1]:.0f})"
@@ -603,7 +629,11 @@ if QtWidgets is not None:
             values.extend(plan.get("property_ids", []))
             values.extend(plan.get("property_labels", []))
             for parameter in plan.get("parameters", []):
-                values.extend((parameter.get("id", ""), parameter.get("label", "")))
+                values.extend((
+                    parameter.get("id", ""),
+                    parameter.get("group", ""),
+                    parameter.get("label", ""),
+                ))
             return " ".join(str(value) for value in values).lower()
 
         def _filter_plans(self):
