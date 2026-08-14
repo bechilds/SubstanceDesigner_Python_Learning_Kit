@@ -304,12 +304,50 @@ def _switch_selection(node):
     return 0
 
 
-def _reachable_nodes(graph, current_mode):
-    """从 Published Output 反向遍历；Current 模式在 Switch 处只走当前输入。"""
+def _reachable_nodes(graph, switch_mode="all", node_scores=None):
+    """从 Published Output 反向遍历，并按模式处理 Switch 输入分支。"""
     try:
         roots = _as_list(graph.getOutputNodes())
     except Exception:
         roots = []
+
+    if switch_mode == "maximum":
+        score_map = node_scores or {}
+        memo = {}
+
+        def collect_upstream(node, active):
+            key = _node_id(node) or str(id(node))
+            if key in memo:
+                return set(memo[key])
+            if key in active:
+                return {key}
+            active = set(active)
+            active.add(key)
+            groups = _upstream_by_property(node)
+            if "switch" in _definition_id(node).lower() and groups:
+                candidates = []
+                for _prop_id, upstream in groups:
+                    branch = set()
+                    for candidate in upstream:
+                        branch.update(collect_upstream(candidate, active))
+                    branch_score = sum(score_map.get(item, 0.0) for item in branch)
+                    candidates.append((branch_score, branch))
+                groups_nodes = max(candidates, key=lambda item: item[0])[1]
+            else:
+                groups_nodes = set()
+                for _prop_id, upstream in groups:
+                    for candidate in upstream:
+                        groups_nodes.update(collect_upstream(candidate, active))
+            result = groups_nodes | {key}
+            memo[key] = result
+            return set(result)
+
+        selected = set()
+        for root in roots:
+            selected.update(collect_upstream(root, set()))
+        all_nodes = _reachable_nodes(graph, switch_mode="all")
+        return {key: node for key, node in all_nodes.items() if key in selected}
+
     visited = {}
     stack = list(roots)
     while stack:
@@ -320,7 +358,7 @@ def _reachable_nodes(graph, current_mode):
         visited[key] = node
         groups = _upstream_by_property(node)
         is_switch = "switch" in _definition_id(node).lower()
-        if current_mode and is_switch and groups:
+        if switch_mode == "current" and is_switch and groups:
             groups = [groups[min(_switch_selection(node), len(groups) - 1)]]
         for _prop_id, upstream in groups:
             stack.extend(upstream)
@@ -360,13 +398,22 @@ def _score_node(node, graph_size, graph_resolution_estimated):
 
 
 def _level(score):
-    if score <= 50:
+    if score <= 150:
         return "Low"
-    if score <= 120:
+    if score <= 400:
         return "Medium"
-    if score <= 200:
+    if score <= 800:
         return "High"
     return "Very High"
+
+
+def _health_level(risks):
+    """文件完整性独立评级，不再与性能复杂度混合。"""
+    if any(float(item.get("score", 0.0)) >= 40.0 for item in risks):
+        return "Error"
+    if risks:
+        return "Warning"
+    return "Healthy"
 
 
 def _graph_name(graph):
@@ -591,20 +638,23 @@ def analyze_graph(graph):
         raise ValueError("未找到当前 Graph。")
     graph_width, graph_height, resolution_estimated, resolution_basis = _graph_resolution(graph)
     graph_size = (graph_width, graph_height)
-    potential_nodes = _reachable_nodes(graph, current_mode=False)
-    current_nodes = _reachable_nodes(graph, current_mode=True)
+    potential_nodes = _reachable_nodes(graph, switch_mode="all")
+    current_nodes = _reachable_nodes(graph, switch_mode="current")
     node_rows = [
         _score_node(node, graph_size, resolution_estimated)
         for node in potential_nodes.values()
     ]
     node_rows.sort(key=lambda item: item["score"], reverse=True)
     by_id = {item["id"]: item for item in node_rows}
-    potential_complexity_score = round(sum(item["score"] for item in node_rows), 2)
+    node_scores = {item["id"]: item["score"] for item in node_rows}
+    maximum_nodes = _reachable_nodes(graph, switch_mode="maximum", node_scores=node_scores)
+    all_branches_complexity_score = round(sum(item["score"] for item in node_rows), 2)
+    potential_complexity_score = round(sum(by_id[key]["score"] for key in maximum_nodes if key in by_id), 2)
     current_complexity_score = round(sum(by_id[key]["score"] for key in current_nodes if key in by_id), 2)
     risk_items = _collect_file_risks(graph)
     file_risk_score = round(sum(item["score"] for item in risk_items), 2)
-    potential_score = round(potential_complexity_score + file_risk_score, 2)
-    current_score = round(current_complexity_score + file_risk_score, 2)
+    potential_score = potential_complexity_score
+    current_score = current_complexity_score
 
     warnings = []
     for risk in risk_items:
@@ -665,8 +715,10 @@ def analyze_graph(graph):
         "potential_score": potential_score,
         "current_complexity_score": current_complexity_score,
         "potential_complexity_score": potential_complexity_score,
+        "all_branches_complexity_score": all_branches_complexity_score,
         "file_risk_score": file_risk_score,
         "risk_items": risk_items,
+        "file_health": _health_level(risk_items),
         "current_level": _level(current_score),
         "potential_level": _level(potential_score),
         "reachable_count": len(node_rows),

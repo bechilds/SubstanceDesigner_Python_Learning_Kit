@@ -44,9 +44,19 @@ def _scalar_text(value):
 def _read_group(graph, prop):
     try:
         value = graph.getPropertyAnnotationValueFromId(prop, "group")
-        return _scalar_text(value)
+        if value is not None:
+            return _scalar_text(value)
     except _SD_ERRORS:
-        return ""
+        pass
+    if SDPropertyCategory is not None:
+        try:
+            metadata = graph.getPropertyMetadataDictFromId(
+                prop.getId(), SDPropertyCategory.Input)
+            if metadata is not None:
+                return _scalar_text(metadata.getPropertyValueFromId("group"))
+        except _SD_ERRORS:
+            pass
+    return ""
 
 
 def _read_label(prop):
@@ -118,6 +128,37 @@ def _child_value(element, child_tag):
     return child.get("v", "") if child is not None else ""
 
 
+def _set_xml_group(parameter_node, group_name):
+    """同步 paraminput 的直接 Group 与 metadata Group。"""
+    group_name = str(group_name or "")
+    group_element = parameter_node.find("group")
+    if group_element is None:
+        group_element = ET.Element("group")
+        metadata = parameter_node.find("metadata")
+        if metadata is None:
+            parameter_node.append(group_element)
+        else:
+            parameter_node.insert(list(parameter_node).index(metadata), group_element)
+    group_element.set("v", group_name)
+
+    metadata = parameter_node.find("metadata")
+    if metadata is None:
+        metadata = ET.SubElement(parameter_node, "metadata")
+    group_metadata = None
+    for entry in metadata.findall("treestr"):
+        if _child_value(entry, "name") == "group":
+            group_metadata = entry
+            break
+    if group_metadata is None:
+        group_metadata = ET.SubElement(metadata, "treestr")
+        ET.SubElement(group_metadata, "name", {"v": "group"})
+        ET.SubElement(group_metadata, "value")
+    value_element = group_metadata.find("value")
+    if value_element is None:
+        value_element = ET.SubElement(group_metadata, "value")
+    value_element.set("v", group_name)
+
+
 def _graph_identifier(graph):
     try:
         identifier = graph.getIdentifier()
@@ -169,8 +210,9 @@ def _find_xml_graph(root, graph_identifier):
     return matches[0]
 
 
-def _stage_reordered_xml(source_path, graph_identifier, ordered_ids):
-    """生成已验证的临时 SBS，但不修改源文件。"""
+def _stage_reordered_xml(
+        source_path, graph_identifier, ordered_ids, group_by_id=None):
+    """生成已验证的临时 SBS，同时同步参数顺序和目标分组。"""
     tree = ET.parse(source_path)
     graph_element = _find_xml_graph(tree.getroot(), graph_identifier)
     paraminputs = graph_element.find("paraminputs")
@@ -195,6 +237,11 @@ def _stage_reordered_xml(source_path, graph_identifier, ordered_ids):
                    if parameter_id not in nodes_by_id]
     if not sortable_ids:
         raise ValueError("当前 UI 参数均未序列化到 SBS，无法通过 XML 排序。")
+
+    if group_by_id:
+        for parameter_id in sortable_ids:
+            if parameter_id in group_by_id:
+                _set_xml_group(nodes_by_id[parameter_id], group_by_id[parameter_id])
 
     sortable_positions = [index for index, node in enumerate(parameter_nodes)
                           if _child_value(node, "identifier") in requested_ids]
@@ -233,6 +280,11 @@ def apply_group_order(graph, ordered_groups):
     ordered_ids = [parameter["id"]
                    for _group_name, parameters in ordered_groups
                    for parameter in parameters]
+    group_by_id = {
+        parameter["id"]: group_name
+        for group_name, parameters in ordered_groups
+        for parameter in parameters
+    }
     if not ordered_ids:
         return False, ["没有可排序的曝光参数。"]
 
@@ -277,7 +329,7 @@ def apply_group_order(graph, ordered_groups):
     try:
         package_manager.savePackage(package)
         staged_path, sorted_ids, skipped_ids = _stage_reordered_xml(
-            package_path, graph_identifier, ordered_ids)
+            package_path, graph_identifier, ordered_ids, group_by_id)
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = f"{package_path}.ExposeParameterAutoSorting_{timestamp}.bak"
@@ -291,7 +343,7 @@ def apply_group_order(graph, ordered_groups):
         package_unloaded = False
 
         messages = [
-            f"已通过 XML 排序 {len(sorted_ids)} 个参数。",
+            f"已通过 XML 排序并同步分组 {len(sorted_ids)} 个参数。",
             f"备份文件: {backup_path}",
             "Package 已重新加载；请在 Explorer 中双击原 Graph 重新打开。",
         ]

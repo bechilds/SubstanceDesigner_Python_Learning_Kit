@@ -9,6 +9,7 @@
 
 - **按分组列出**当前图（`getCurrentGraph()`）的已曝露参数，**只含「INPUT PARAMETERS」与「INPUTS」两类**（排除 `$outputsize` 等以 `$` 开头的内置基础参数），并按 SD 的分组（`group` 注解）保留层级。分类与 Group 节点支持三态勾选，选择或取消组会同步组内全部参数；也支持全选 / 全不选。
   - `prop.isConnectable()` 为 `True` → 归入 **INPUTS**（图像输入）；为 `False` → 归入 **INPUT PARAMETERS**（数值型参数）。
+- **显示 Editor 类型**：在“引用状态”前显示参数的 `editor` 注解，例如 `Slider`、`Color`、`Angle`；没有该注解时留空。
 - **标记空参数**：扫描当前 Graph 全部节点属性函数中的 Get Variable；没有被任何节点引用的已暴露参数在“引用状态”列标记为“未被节点引用”。
 - **参数分组排序**：曝光参数区域内直接打开 ExposeParameterAutoSorting，按 Group 调整 INPUT PARAMETERS 顺序；排序包原公开入口继续保留供兼容调用。
 - **缓存到当前目录**：把当前已曝露参数快照写到 `.sbs` 同目录的 `OutputData.json`。
@@ -21,7 +22,7 @@
   - Label、Group 和当前值逐字段独立写入；目标不支持某注解或 SD API 返回错误时只跳过该字段并汇总原因，其余字段和参数继续处理。
 - **去除 Copy**：批量去除勾选参数 Label 和 ID 中独立的 `Copy`（不区分大小写，不会误伤 `Copyright` 等单词），并清理遗留空格、下划线和连字符。Label 可直接通过 metadata 修改；SDProperty ID 不可原地重命名，因此 ID 变化时会创建继承原设置/当前值的新参数、迁移全图 Get Variable 引用，再删除旧参数。目标 ID 冲突会跳过；迁移失败会恢复引用并清理新参数。整批操作包在一个 UndoGroup 中。
 - **删除勾选项（取消曝露）**：对勾选参数取消曝露。
-  - **先重置依赖该变量的节点参数**：曝露参数时 SD 会把节点参数变成「Get <变量名>」函数；删除前先用 `SDNode.deletePropertyGraph(prop)` 把这些节点参数恢复成常量值，避免删除后留下悬空变量（否则会出现大量 `[WRN][Cooker]Empty variable` / `Some Get nodes don't have a variable name`）。变量名读自 Get 节点的 `__constant__` 属性。
+  - **先重置依赖该变量的节点参数**：曝露参数时 SD 会把节点参数变成「Get <变量名>」函数；删除前先缓存曝光参数的当前 `SDValue`，用 `SDNode.deletePropertyGraph(prop)` 移除函数，再通过 `SDNode.setPropertyValue(prop, value)` 把当前曝光值写成节点常量，避免节点回到旧默认值或留下悬空变量（否则会出现大量 `[WRN][Cooker]Empty variable` / `Some Get nodes don't have a variable name`）。变量名读自 Get 节点的 `__constant__` 属性。
   - 再调用 `graph.deleteProperty()` 删除图层级的输入属性。
   - 删除后再扫描全图一次，兜底重置仍残留的、变量名已变空的损坏 Get 函数。
   - 整个删除（重置 + 删除）包在同一个 `SDHistoryUtils.UndoGroup` 里，可在 SD 中按 **Ctrl+Z** 一次性撤销。
@@ -46,13 +47,13 @@ output/
 | 文件 / 函数 | 职责 |
 |---|---|
 | `output_data.get_current_graph()` | 取当前图 |
-| `output_data.collect_exposed_parameters(graph)` | 枚举已暴露参数（排除基础参数）→ list[dict]，带 `category`/`group`/`referenced` |
+| `output_data.collect_exposed_parameters(graph)` | 枚举已暴露参数（排除基础参数）→ list[dict]，带 `category`/`group`/`editor`/`referenced` |
 | `output_data.group_parameters(params)` | 组织成「分类 → 分组 → 参数」结构供 UI 渲染 |
 | `output_data.duplicate_exposed_parameter(graph, source_id, new_id, new_label)` | 用 `newProperty` 创建真实副本，复制类型、注解和 SD 原生当前值 |
 | `output_data.duplicate_exposed_parameters(graph, copies)` | 在一个 UndoGroup 中批量创建真实参数副本，返回成功/失败/注解警告汇总 |
 | `output_data.update_exposed_parameter_settings(graph, updates)` | 批量写入 Label、Group 和受支持的标量当前值；包 UndoGroup |
 | `output_data.remove_copy_from_parameters(graph, ids)` | 清理 Label/ID 的独立 Copy；ID 变化时迁移 Get Variable 引用并删除旧参数，失败时回滚 |
-| `output_data.delete_exposed_parameters(graph, ids)` | 先 `deletePropertyGraph` 重置依赖节点参数，再 `deleteProperty` 取消暴露，删后再扫一遍兜底；包 UndoGroup，返回 (deleted, failed, reset) |
+| `output_data.delete_exposed_parameters(graph, ids)` | 缓存曝光参数当前值，先 `deletePropertyGraph` 重置依赖节点参数并用 `setPropertyValue` 写回当前值，再 `deleteProperty` 取消暴露，删后再扫一遍兜底；包 UndoGroup，返回 (deleted, failed, reset) |
 | `output_data.repair_broken_node_functions(graph)` | 扫描全图重置变量名已空的损坏 Get 函数，返回重置个数；包 UndoGroup |
 | `output_data.collect_broken_nodes(graph)` | 只读列出 Get Variable 损坏且节点属性没有非空输入值的节点 |
 | `output_data.goto_node(graph, id)` | 用 `SDUIMgr.focusGraphNode` 把视图居中到该节点 |
@@ -75,7 +76,7 @@ OutputData JSON 结构：
     {
       "id": "...", "label": "...", "type": "...",
       "default": "...", "value": "...",
-      "connectable": false, "category": "parameters", "group": "...",
+      "connectable": false, "category": "parameters", "group": "...", "editor": "Slider",
       "referenced": true, "selected": false
     }
   ]
@@ -90,7 +91,7 @@ OutputData JSON 结构：
 - `app.getQtForPythonUIMgr().getCurrentGraph()` — 当前图
 - `graph.getProperties(SDPropertyCategory.Input)` — 输入属性列表
 - `prop.getId() / getLabel() / getType() / getDefaultValue() / isConnectable()` — 参数信息与「输入 vs 参数」判定
-- `graph.getPropertyAnnotationValueFromId(prop, 'group')` — 读取分组
+- `graph.getPropertyAnnotationValueFromId(prop, 'group' / 'editor')` — 读取分组和 Editor 类型
 - `graph.getPropertyFromId(id, SDPropertyCategory.Input)` — 按 id 取属性
 - `graph.newProperty(id, type, SDPropertyCategory.Input)` — 创建真实的新 INPUT PARAMETERS 参数
 - `graph.getPropertyAnnotations()` / `setPropertyAnnotationValueFromId()` — 复制或修改 Label、Group、范围等参数注解

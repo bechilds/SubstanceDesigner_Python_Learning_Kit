@@ -149,18 +149,23 @@ def _property_has_nonempty_input_value(node, prop):
     return scalar_value_to_text(_value_to_str(value)) != ""
 
 
+def _read_annotation_text(graph, prop, annotation_id):
+    """读取属性的文本注解；注解不存在或读取失败时返回空串。"""
+    try:
+        value = graph.getPropertyAnnotationValueFromId(prop, annotation_id)
+        if value is None:
+            return ""
+        return scalar_value_to_text(_value_to_str(value)) or ""
+    except Exception:
+        return ""
+
+
 def _read_group(graph, prop):
     """读取属性的分组（group 注解）。无分组 / 读取失败返回空串。
 
     分组是非破坏性读取；即使 'group' 注解 id 在某些版本不存在，最坏只是显示为未分组。
     """
-    try:
-        v = graph.getPropertyAnnotationValueFromId(prop, "group")
-        if v is None:
-            return ""
-        return scalar_value_to_text(_value_to_str(v)) or ""
-    except Exception:
-        return ""
+    return _read_annotation_text(graph, prop, "group")
 
 
 # UI 顶层分类顺序与中文标签（对应 SD 参数面板的两个区）
@@ -213,7 +218,7 @@ def collect_exposed_parameters(graph):
     """枚举图的已暴露输入参数，返回 list[dict]。
 
     仅包含「INPUT PARAMETERS」与「INPUTS」两类——即排除以 '$' 开头的内置基础参数。
-    每项: {id, label, type, default, value, connectable, category, group, referenced}。
+    每项: {id, label, type, default, value, connectable, category, group, editor, referenced}。
     - connectable=True → 图像输入（INPUTS）；False → 数值型输入参数（INPUT PARAMETERS）。
     - category: "inputs" / "parameters"。
     - group: 该参数所属分组名（空串表示未分组）。
@@ -255,6 +260,7 @@ def collect_exposed_parameters(graph):
                 "connectable": connectable,
                 "category": CATEGORY_INPUTS if connectable else CATEGORY_PARAMETERS,
                 "group": _read_group(graph, prop),
+                "editor": _read_annotation_text(graph, prop, "editor"),
                 "referenced": pid in referenced_ids,
             })
         except Exception as e:
@@ -879,14 +885,27 @@ def _collect_set_var_names(func_graph):
 
 
 def _reset_dependent_node_params(graph, var_ids):
-    """删除前：把「引用 var_ids 变量的 Get 函数」驱动的节点参数重置回常量值。
+    """删除前：重置引用 var_ids 的节点参数，并写回曝光参数当前值。
 
-    趁变量还存在时重置，SDNode.deletePropertyGraph(prop) 能恢复出合理的常量值。
+    趁变量还存在时缓存其原生 SDValue。删除属性函数后，通过
+    SDNode.setPropertyValue(prop, value) 把曝光参数的当前值写成节点常量，
+    避免节点回到曝光前的旧默认值。
     返回被重置的节点参数个数。
     """
     if not var_ids or SDPropertyCategory is None:
         return 0
     want = set(var_ids)
+    current_values = {}
+    for var_id in var_ids:
+        try:
+            exposed_prop = graph.getPropertyFromId(
+                var_id, SDPropertyCategory.Input)
+            if exposed_prop is not None:
+                value = graph.getPropertyValue(exposed_prop)
+                if value is not None:
+                    current_values[var_id] = value
+        except _SD_API_ERRORS as e:
+            print(f"{_LOG} 读取曝光参数 {var_id} 当前值失败，将只重置函数: {e}")
     reset_count = 0
     try:
         nodes = graph.getNodes()
@@ -911,10 +930,26 @@ def _reset_dependent_node_params(graph, var_ids):
                 continue
             try:
                 names, _ = _collect_get_var_status(pg)
-                if names & want:
+                matched_ids = names & want
+                if matched_ids:
                     node.deletePropertyGraph(prop)
                     reset_count += 1
-            except Exception as e:
+                    writable_ids = [
+                        var_id for var_id in matched_ids
+                        if var_id in current_values
+                    ]
+                    if len(writable_ids) == 1:
+                        try:
+                            node.setPropertyValue(
+                                prop, current_values[writable_ids[0]])
+                        except _SD_API_ERRORS as e:
+                            print(f"{_LOG} 节点参数已重置，但写回曝光参数当前值失败: {e}")
+                    elif len(writable_ids) > 1:
+                        print(
+                            f"{_LOG} 节点参数同时引用多个待删除曝光参数，"
+                            "已重置但跳过当前值写回"
+                        )
+            except _SD_API_ERRORS as e:
                 print(f"{_LOG} 重置某节点参数失败（已跳过）: {e}")
     return reset_count
 
@@ -988,7 +1023,7 @@ def delete_exposed_parameters(graph, ids):
     - failed: [(id, 原因)]。
     - reset: 被重置回常量值的节点参数个数。
     流程（同一个 UndoGroup 内，可在 SD 里一次性 Ctrl+Z 撤销）：
-      1) 删除前：重置「引用这些变量的 Get 函数」驱动的节点参数（恢复合理常量值）。
+            1) 删除前：缓存曝光参数当前值，重置引用函数并把当前值写成节点常量。
       2) 删除图层级的输入属性本身。
       3) 删除后：再扫描全图，重置仍残留的「损坏 Get 函数」（变量名已变空的）。
     """
@@ -1000,7 +1035,7 @@ def delete_exposed_parameters(graph, ids):
 
     def _do():
         nonlocal reset
-        # 1) 删除前重置（趁变量还在，恢复出合理常量值）
+        # 1) 删除前重置，并把曝光参数当前值写成节点常量
         reset += _reset_dependent_node_params(graph, ids)
         # 2) 删除图输入属性
         for pid in ids:

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""OutputTools（输出脚本）：展示当前插件的所有功能（分类）及其分支（子模块），
-勾选后把对应源码打包导出成一个独立、自包含的 .py 文件，方便其他工具集成。
+"""OutputTools（输出脚本）：展示当前插件的所有功能（分类）及其分支（子模块）。
+
+支持导出独立、自包含的 .py 文件，或按 MG MaxSD loader 约定输出到自定义目录。
 
 菜单位置：`MaxSDPlugin/OutputTools/输出脚本`。
 
@@ -10,13 +11,15 @@
     - Edit        -> frame_color_modify/ 下各 .py
     - File        -> save_with_resource/ 下各 .py
     - Analysis    -> sbs_file_reporter/ 下各 .py
-  - OutputTools -> 本包各 .py
-导出：拼接所选模块源码，顶部加生成信息，去掉相对 import，附功能清单注释。
+    - OutputTools -> 本包各 .py
+独立脚本：把所选模块封装到隔离命名空间，附带跨版本兼容层。
+MG 输出：保留分类目录，生成 LG_MaxSD_*.py 并改写模块 import。
 数据层与 UI 层放在同一文件（SD 专有 API 极少，全部包 try/except）。
 """
 
 import os
 import datetime
+import re
 
 # --- PySide：SD 16.0.1 = PySide6；保留 PySide2 回退 ---
 try:
@@ -35,9 +38,13 @@ _dialog_ref = None  # 防 GC
 # 分类显示名：包目录名 -> 中文标题
 _CATEGORY_TITLES = {
     "output": "Output（曝光参数）",
+    "preset_recovery": "Output（预设效果找回）",
+    "batch_merge_tex_channel": "Output（BatchMergeTexChannel）",
     "debug": "Debug（Publish Checker）",
     "frame_color_modify": "Edit（FrameColorModify）",
     "auto_add_expose_comment": "Edit（AutoAddExposeCommitToNode）",
+    "switch_manager": "Edit（开关管理工具）",
+    "expose_param_sorting": "Output（曝光参数分组排序）",
     "save_with_resource": "File（SaveWithResrouce）",
     "sbs_file_reporter": "Analysis（SBSFileRepoter）",
     "output_tools": "OutputTools（输出脚本）",
@@ -231,6 +238,175 @@ def export_modules(module_paths, out_path, sd_version="auto"):
                   f"· 宿主集成则 import 后调 maxsd_activate(main_win) 或 maxsd_show_all(main_win)。")
 
 
+def export_modules_to_mg(module_paths, output_root):
+    """把所选模块输出为 MG MaxSD loader 可加载的文件。返回 (ok, 信息)。
+
+    输出目录可由用户指定；模块保留原分类子目录，文件名统一加 ``LG_MaxSD_``
+    前缀。共享兼容层固定写到根目录 ``LG_MaxSD_sdcompat.py``。同名模块被同时
+    选择时自动加分类名，避免 ``logic.py`` / ``window.py`` 互相覆盖。
+    """
+    if not module_paths:
+        return False, "未选择任何功能。"
+    if not output_root:
+        return False, "未指定 MG 输出目录。"
+
+    output_root = os.path.abspath(output_root)
+    entries = _build_mg_entries(module_paths)
+    written = []
+    warnings = []
+
+    try:
+        os.makedirs(output_root, exist_ok=True)
+        compat_source = os.path.join(_plugin_root(), "sdcompat.py")
+        compat_target = os.path.join(output_root, "LG_MaxSD_sdcompat.py")
+        with open(compat_source, "r", encoding="utf-8") as source_file:
+            compat_text = source_file.read().replace("[MaxSDPlugin", "[LG_MaxSD")
+        _write_text_file(compat_target, compat_text)
+        written.append(compat_target)
+
+        for entry in entries:
+            with open(entry["source_path"], "r", encoding="utf-8") as source_file:
+                source_text = source_file.read()
+            output_text, missing = _rewrite_mg_source(source_text, entry, entries)
+            category_dir = os.path.join(output_root, entry["category"])
+            os.makedirs(category_dir, exist_ok=True)
+            target_path = os.path.join(category_dir, entry["module_name"] + ".py")
+            _write_text_file(target_path, output_text)
+            written.append(target_path)
+            warnings.extend(missing)
+    except Exception as e:
+        return False, f"输出到 MG 失败: {e}"
+
+    message = f"已输出 {len(entries)} 个模块和兼容层到 MG 目录:\n{output_root}"
+    if warnings:
+        unique_warnings = sorted(set(warnings))
+        message += "\n\n注意：以下相对依赖未在本次勾选中，请一并输出：\n· " + "\n· ".join(unique_warnings)
+    message += "\n\n模块文件已生成；Start.py 与 LG_Tool.py 菜单仍由 MG 工具包按实际入口注册。"
+    return True, message
+
+
+def _build_mg_entries(module_paths):
+    """建立源模块到 MG 模块名的映射，必要时消除同名冲突。"""
+    raw_entries = []
+    name_counts = {}
+    for source_path in module_paths:
+        absolute_path = os.path.abspath(source_path)
+        category = os.path.basename(os.path.dirname(absolute_path))
+        source_name = os.path.splitext(os.path.basename(absolute_path))[0]
+        name_counts[source_name] = name_counts.get(source_name, 0) + 1
+        raw_entries.append((absolute_path, category, source_name))
+
+    entries = []
+    for source_path, category, source_name in raw_entries:
+        suffix = source_name
+        if name_counts[source_name] > 1:
+            suffix = f"{category}_{source_name}"
+        entries.append({
+            "source_path": source_path,
+            "category": category,
+            "source_name": source_name,
+            "module_name": f"LG_MaxSD_{suffix}",
+        })
+    return entries
+
+
+def _rewrite_mg_source(source_text, current_entry, entries):
+    """把插件包相对 import 改为 MG loader 使用的唯一绝对模块名。"""
+    by_key = {
+        (entry["category"], entry["source_name"]): entry["module_name"]
+        for entry in entries
+    }
+    missing = []
+    output_lines = []
+    category = current_entry["category"]
+
+    for line in source_text.splitlines():
+        stripped = line.lstrip()
+        indent = line[:len(line) - len(stripped)]
+
+        match = re.match(r"from \. import ([A-Za-z_]\w*)(?: as ([A-Za-z_]\w*))?\s*$", stripped)
+        if match:
+            dependency, alias = match.groups()
+            target_name = by_key.get((category, dependency))
+            if target_name is None:
+                target_name = "LG_MaxSD_" + dependency
+                missing.append(f"{category}/{dependency}.py")
+            line = f"{indent}import {target_name}"
+            if alias:
+                line += f" as {alias}"
+        else:
+            match = re.match(r"from \.([A-Za-z_]\w*) import (.+)$", stripped)
+            if match:
+                dependency, imported_names = match.groups()
+                target_name = by_key.get((category, dependency))
+                if target_name is None:
+                    target_name = "LG_MaxSD_" + dependency
+                    missing.append(f"{category}/{dependency}.py")
+                line = f"{indent}from {target_name} import {imported_names}"
+            elif stripped.startswith("from .. import sdcompat"):
+                alias = "sdcompat"
+                if " as " in stripped:
+                    alias = stripped.rsplit(" as ", 1)[1].strip()
+                line = f"{indent}import LG_MaxSD_sdcompat as {alias}"
+            elif stripped.startswith("from ..sdcompat import "):
+                imported_names = stripped[len("from ..sdcompat import "):]
+                line = f"{indent}from LG_MaxSD_sdcompat import {imported_names}"
+            else:
+                match = re.match(r"from \.\.([A-Za-z_]\w*) import (.+)$", stripped)
+                if match:
+                    dependency, imported_names = match.groups()
+                    imported_module, alias = _split_single_import(imported_names)
+                    target_name = by_key.get((dependency, imported_module))
+                    if target_name is not None:
+                        line = f"{indent}import {target_name}"
+                        if alias:
+                            line += f" as {alias}"
+                    else:
+                        target_name = _find_mg_symbol_module(dependency, imported_names, entries)
+                        if target_name is None:
+                            target_name = "LG_MaxSD_" + dependency
+                            missing.append(f"{dependency}/__init__.py")
+                        line = f"{indent}from {target_name} import {imported_names}"
+
+        output_lines.append(line.replace("MaxSDPlugin", "LG_MaxSD"))
+
+    return "\n".join(output_lines) + "\n", missing
+
+
+def _split_single_import(imported_names):
+    """解析单个 ``name [as alias]``；多项导入返回不会命中的原文本。"""
+    if "," in imported_names:
+        return imported_names.strip(), None
+    parts = imported_names.strip().split(" as ", 1)
+    return parts[0].strip(), parts[1].strip() if len(parts) == 2 else None
+
+
+def _find_mg_symbol_module(category, imported_names, entries):
+    """在已选分类模块中找到定义导入符号的文件，供跨分类 import 使用。"""
+    symbol = imported_names.split(",", 1)[0].strip().split(" as ", 1)[0].strip()
+    candidates = [entry for entry in entries if entry["category"] == category]
+    for entry in candidates:
+        try:
+            with open(entry["source_path"], "r", encoding="utf-8") as source_file:
+                source_text = source_file.read()
+        except Exception:
+            continue
+        pattern = r"^(?:def|class)\s+" + re.escape(symbol) + r"\b"
+        if re.search(pattern, source_text, re.MULTILINE):
+            return entry["module_name"]
+    if len(candidates) == 1:
+        return candidates[0]["module_name"]
+    return None
+
+
+def _write_text_file(path, text):
+    """先写临时文件再替换目标，避免输出中断留下半个 Python 文件。"""
+    temp_path = path + ".tmp"
+    with open(temp_path, "w", encoding="utf-8", newline="\n") as output_file:
+        output_file.write(text)
+    os.replace(temp_path, path)
+
+
 def _rewrite_relative_imports(src, cat):
     """把同包相对 import 改写到合成子包，前缀加上分类名以匹配 bundle 命名。
 
@@ -291,7 +467,7 @@ if QtWidgets is not None:
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setWindowTitle("OutputTools - MaxSDPlugin")
-            self.resize(560, 460)
+            self.resize(700, 500)
             self._build_ui()
             self._refresh()
 
@@ -315,13 +491,16 @@ if QtWidgets is not None:
             self._btn_all = QtWidgets.QPushButton("全选", self)
             self._btn_none = QtWidgets.QPushButton("全不选", self)
             self._btn_export = QtWidgets.QPushButton("导出为独立脚本", self)
+            self._btn_export_mg = QtWidgets.QPushButton("输出到 MG...", self)
             self._btn_close = QtWidgets.QPushButton("关闭", self)
             self._btn_refresh.clicked.connect(self._refresh)
             self._btn_all.clicked.connect(lambda: self._set_all(True))
             self._btn_none.clicked.connect(lambda: self._set_all(False))
             self._btn_export.clicked.connect(self._export)
+            self._btn_export_mg.clicked.connect(self._export_to_mg)
             self._btn_close.clicked.connect(self.close)
-            for b in (self._btn_refresh, self._btn_all, self._btn_none, self._btn_export):
+            for b in (self._btn_refresh, self._btn_all, self._btn_none,
+                      self._btn_export, self._btn_export_mg):
                 row.addWidget(b)
             row.addStretch(1)
             row.addWidget(self._btn_close)
@@ -367,6 +546,39 @@ if QtWidgets is not None:
             ok, msg = export_modules(paths, out)
             box = QtWidgets.QMessageBox.information if ok else QtWidgets.QMessageBox.warning
             box(self, "MaxSDPlugin · OutputTools", msg)
+
+        def _export_to_mg(self):
+            paths = self._checked_paths()
+            if not paths:
+                QtWidgets.QMessageBox.information(self, "MaxSDPlugin", "请先勾选要输出到 MG 的功能/分支。")
+                return
+
+            default_root = ""
+            public_root = os.environ.get("LGPublicMGEnv", "")
+            if public_root:
+                candidate = os.path.join(
+                    public_root, "Scriptlibrary", "substance", "sdesigner", "MaxSD")
+                if os.path.isdir(candidate):
+                    default_root = candidate
+            output_root = QtWidgets.QFileDialog.getExistingDirectory(
+                self, "选择 MG MaxSD 输出目录", default_root)
+            if not output_root:
+                return
+
+            answer = QtWidgets.QMessageBox.question(
+                self,
+                "确认输出到 MG",
+                "将把所选模块按分类写入以下目录，同名 LG_MaxSD_*.py 会被覆盖：\n\n"
+                + output_root,
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
+
+            ok, msg = export_modules_to_mg(paths, output_root)
+            box = QtWidgets.QMessageBox.information if ok else QtWidgets.QMessageBox.warning
+            box(self, "MaxSDPlugin · 输出到 MG", msg)
 
 
 def show_window(main_win=None):

@@ -2,6 +2,22 @@
 插件名称：MaxSDPlugin
 
 ## 更新记录（格式：日期 · vX.Y.Z · 改动 · 影响范围 · 是否需重启 SD）
+- 2026-08-13 · v0.23.0 · 曝光参数“参数分组排序”新增组内参数排序、受约束的树内拖拽、Ctrl+上/下快捷移动及“更改分组”：分组只能在顶层排序，参数可在组内拖动或拖入其他组；应用时同步 SBS 的直接 Group 与 metadata Group，并继续保持 INPUTS 原槽位不变 · expose_param_sorting/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-11 · v0.22.0 · OutputTools 新增“输出到 MG”：可选择任意 MaxSD 根目录，按分类生成 `LG_MaxSD_*` 模块并写入共享兼容层；自动改写相对 import、处理同名模块冲突并提示未勾选依赖，同时补齐当前功能分类扫描 · output_tools/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-11 · v0.21.1 · 曝光参数“删除勾选项”在重置依赖节点函数前缓存曝光参数当前 SDValue，重置后将该值写成节点常量，取消曝光不再回到旧默认值 · output/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-11 · v0.21.0 · SBSFileRepoter 的 Potential Maximum 改为逐个 Switch 选择最高成本分支，全部分支总量独立展示；文件健康与性能复杂度拆分，等级阈值调整为 150/400/800；新增报告主体 PNG 截图保存 · sbs_file_reporter/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.20.0 · 预设效果找回参数列表新增导入总数、已匹配数（自动/手动）、未匹配数和逐行匹配状态，并显示目标参数 Editor，手动切换目标时实时刷新；Preset 写入转换结合目标底层类型与 Editor，支持 Toggle/Bool、Dropdown/Enum、ColorRGB(A)、Position、Angle/Slider，非法值在修改 Graph 前中止 · preset_recovery/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.19.5 · 开关管理参数树支持双击编辑 Boolean/Float/Int/String 标量当前值并批量应用，复杂类型与 XML-only INPUTS 保持只读；新增“清除 Visible If”，可把勾选参数或整组的 Visible If 批量删除，两类操作均使用 UndoGroup · switch_manager/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.19.4 · 曝光参数“已暴露参数”列表在引用状态前新增 Editor 类型列，读取并显示 `editor` 注解（如 Slider、Color、Angle），无注解时留空 · output/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.19.3 · 开关管理创建 Boolean 参数时新增 True/False 初始值选择并按所选值写入；当前参数树在 Visible If 后新增“当前数值”列，Graph API 参数显示格式化后的运行时值，XML-only INPUTS 显示 SBS 保存的默认值 · switch_manager/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.19.2 · 修复开关管理刷新后仍显示旧 Group：手动刷新现会先保存当前 Package，再从 SBS 重建 Group 列表；仅当原选中 Group 仍存在时保留，否则自动切换到最新的 Boolean 开关组，已删除或改名的旧 Group 不再被重新写回可编辑框 · switch_manager/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.19.1 · 修复 SD13 Graph API 只返回 INPUT PARAMETERS、完全遗漏属性面板 INPUTS 的问题：参数列表现合并当前已保存 SBS 的 `<paraminputs>`，按 `<isConnectable>` 补入 Input Color/Input Value，并从直接 `<group>` / `<visibleIf>` 读取真实设置；开关 Group 改为可编辑下拉框，可选择现有 Group 或输入新 Group，Group/Visible If 写入不再依赖 API 设置 ID 枚举 · switch_manager/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.19.0 · 按最终需求重做预设效果找回的写入目标：导入 `.sbsprs` 后按当前 Identifier 重映射并通过 SDSBSCompGraph Preset API 写入 `INPUT PARAMETERS > Presets`；目标名称不存在时新建，存在时明确确认后删除重建同名 Preset；全部值先按当前参数类型转换，失败不修改 Graph，导入文件保持只读 · preset_recovery/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.18.1 · 修复开关管理参数树遗漏 Input Color/Input Value 等连接型 INPUTS：改为逐字段容错读取，单个默认值不可读不再跳过整项；创建开关新增 Group 设置，可用开关由下拉框改为单选列表，并严格限定为当前开关 Group 内的 Boolean 参数，应用时再次校验 Group · switch_manager/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.18.0 · 新增 Edit/开关管理工具：可在 INPUT PARAMETERS 创建默认开启的 Boolean 参数，按 INPUT PARAMETERS/INPUTS 与 Group 展示参数当前 Visible If，并把 `input["开关ID"]` 批量写入勾选参数或整组；创建与应用均可单步撤销 · switch_manager/+menu+版本+文档 · 功能、菜单和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.17.2 · 预设效果找回新增来源与目标确认区：并列显示当前 SBS/Graph、导入源文件、源预设序号及原目标，避免单预设时无法判断匹配对象；底部改为明确的执行/取消按钮，执行前汇总源预设、匹配 Graph、替换数量和输出路径，已有输出文件需再次确认覆盖，源预设路径始终禁止覆盖 · preset_recovery/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.17.1 · 纠正预设效果找回的输出目标：不再把旧预设值写入当前 Graph，改为复制源 `.sbsprs`，将匹配参数名称替换为当前 Identifier 对应的新 Label 后另存为新预设；参数类型和值原样保留，源预设与当前 SBS 均不修改 · preset_recovery/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
+- 2026-08-10 · v0.17.0 · 新增 Output/预设效果找回：导入旧 `.sbsprs` 后按预设参数名与当前 Graph Identifier 自动重映射，Label 改名不再阻断标量参数恢复；未匹配项标红并可手动选择写入目标，整批操作可撤销 · preset_recovery/+menu+版本+文档 · 功能、菜单和热重载版本无需重启，入口回退版本生效需重启
 - 2026-08-04 · v0.16.0 · ExposeParameterAutoSorting 合并到 Output/曝光参数面板并移除独立 Edit 菜单项；已暴露参数与画布损坏节点改为独立分组和可调分隔区；参数树新增引用状态并标记未被节点引用的空参数；损坏 Get Variable 对应属性已取得非空输入值（含 0/False）时不再报告或重置“参数输入丢失” · output/+expose_param_sorting/+menu+版本+文档 · 功能、菜单和热重载版本无需重启，入口回退版本生效需重启
 - 2026-08-03 · v0.15.5 · AutoAddExposeCommitToNode 读取曝光参数的 Group 注解并写入 Comment，有分组时使用 `分组|-参数`（如 `Base|-Color`），无分组时保留 `-参数`；扫描表格和搜索同步支持分组 · auto_add_expose_comment/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
 - 2026-08-03 · v0.15.4 · 修复 ExposeParameterAutoSorting 仍将 `<paraminputs>` 中未显示的连接型 INPUTS 误判为错误：Designer 会把 INPUT PARAMETERS 与 INPUTS 同时序列化到 `<paraminputs>`；XML 算法改为目标槽位替换，只在 UI 选中的 INPUT PARAMETERS 原索引之间重排完整节点，未选中的 INPUTS 等节点保持原索引和内容不变 · expose_param_sorting/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
@@ -73,7 +89,7 @@ SD的窗口重制
 清理无效的依赖
 LGSD节点库自动更新
 查错功能（设置了默认的分辨率，三面映射的输入设置，）
-曝光参数添加开关按钮的设定关联
+[已完成] 曝光参数添加开关按钮的设定关联：创建 Boolean 参数，查看 INPUT PARAMETERS / INPUTS 当前 Visible If，并按参数或 Group 批量写入开关表达式。
 设置3D预览窗口的摄像机参数
 统一修改frame类的A值
 检查输出的Identifier 和 Usage 是否一致

@@ -493,10 +493,12 @@ if QtWidgets is not None:
 
             # 分组树：分类 → 分组 → 参数（参数为可勾选叶子）
             self._tree = QtWidgets.QTreeWidget(self)
-            self._tree.setHeaderLabels(["参数", "ID", "当前值", "引用状态"])
+            self._tree.setHeaderLabels(
+                ["参数", "ID", "当前值", "Editor类型", "引用状态"])
             self._tree.setColumnWidth(0, 240)
             self._tree.setColumnWidth(1, 160)
-            self._tree.setColumnWidth(3, 120)
+            self._tree.setColumnWidth(3, 100)
+            self._tree.setColumnWidth(4, 120)
             self._tree.itemChanged.connect(self._parameter_item_changed)
             parameters_layout.addWidget(self._tree, 1)
 
@@ -719,6 +721,7 @@ if QtWidgets is not None:
                                 parent,
                                 [p.get("label") or p.get("id"), p.get("id"),
                                    str(p.get("value")),
+                                              p.get("editor") or "",
                                    "已被节点引用" if p.get("referenced")
                                    else "未被节点引用"],
                             )
@@ -728,7 +731,7 @@ if QtWidgets is not None:
                             leaf.setCheckState(0, QtCore.Qt.Unchecked)
                             leaf.setData(0, self._ID_ROLE, p.get("id"))
                             if not p.get("referenced"):
-                                leaf.setToolTip(3, "当前 Graph 的节点属性函数没有引用此参数。")
+                                leaf.setToolTip(4, "当前 Graph 的节点属性函数没有引用此参数。")
             finally:
                 self._tree.blockSignals(False)
 
@@ -1036,7 +1039,7 @@ if QtWidgets is not None:
             self._refresh()
 
             msg = [f"已取消暴露：{len(deleted)} 个"]
-            msg.append(f"已重置节点参数（恢复常量）：{reset} 个")
+            msg.append(f"已重置节点参数（写回曝光参数当前值）：{reset} 个")
             if backup_path:
                 msg.append(f"已备份到：{backup_path}")
             if failed:

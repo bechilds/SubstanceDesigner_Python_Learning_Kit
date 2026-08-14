@@ -16,6 +16,11 @@
 │   │   ├── exposed_parameters_window.py  # 曝光参数对话框 UI
 │   │   ├── output_data.py                # 枚举参数 + OutputData 读写
 │   │   └── README.md
+│   ├── preset_recovery/ # Output/预设效果找回（旧预设参数重映射）
+│   │   ├── __init__.py
+│   │   ├── logic.py               # 预设解析、Identifier 匹配与 Graph Preset 写入
+│   │   ├── window.py              # 未匹配参数的手动目标选择 UI
+│   │   └── README.md
 │   ├── batch_merge_tex_channel/ # Output/BatchMergeTexChannel（批量合并贴图通道）
 │   │   ├── __init__.py
 │   │   ├── logic.py              # 文件匹配、SBS 接口校验、计算与保存
@@ -34,6 +39,11 @@
 │   │   ├── __init__.py
 │   │   ├── auto_add_expose_comment.py
 │   │   └── README.md
+│   ├── switch_manager/ # Edit/开关管理工具（Boolean 参数与 Visible If 批量关联）
+│   │   ├── __init__.py
+│   │   ├── logic.py
+│   │   ├── window.py
+│   │   └── README.md
 │   ├── expose_param_sorting/ # 曝光参数面板的分组排序子功能（仅排序 INPUT PARAMETERS）
 │   │   ├── __init__.py
 │   │   ├── sorting_logic.py
@@ -42,6 +52,10 @@
 │   ├── save_with_resource/ # File/SaveWithResrouce（保存副本并收集外部文件）
 │   │   ├── __init__.py
 │   │   ├── save_with_resource.py
+│   │   └── README.md
+│   ├── output_tools/    # 独立脚本打包与自定义目录 MG MaxSD 输出
+│   │   ├── __init__.py
+│   │   ├── output_tools.py
 │   │   └── README.md
 │   ├── sbs_file_reporter/ # Analysis 功能分类（SBS 静态复杂度审计）
 │   │   ├── __init__.py
@@ -66,16 +80,20 @@ MaxSDPlugin
 ├─ Output
 │  ├─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（删除重置为 TODO）
 │  │                    # 内含参数分组排序、空参数标记和画布损坏节点检查
+│  ├─ 预设效果找回    # 按 Identifier 在当前 Graph 中新建或覆盖 Preset
 │  └─ BatchMergeTexChannel # 按关键字分组并批量合并贴图通道
 ├─ Edit
 │  ├─ FrameColorModify # 统一修改当前画布全部 Frame 的颜色和透明度
 │  ├─ AutoAddExposeCommitToNode # 给使用曝光参数的节点创建或更新 Comment
+│  └─ 开关管理工具      # 在指定开关 Group 创建/筛选 Boolean，并批量设置 Visible If
 ├─ File
 │  └─ SaveWithResrouce # 保存 SBS 副本并收集外部依赖与 Resource
 └─ Debug
 │  └─ Publish Checker    # 扫描发布 sbsar 可能警告的节点（损坏函数/缺失资源/未连接输出/悬挂）
 └─ Analysis
-  └─ SBSFileRepoter     # 静态复杂度评分、潜在分支、高成本节点定位与发布预警
+│  └─ SBSFileRepoter     # 静态复杂度评分、潜在分支、高成本节点定位与发布预警
+└─ OutputTools
+  └─ 输出脚本           # 独立脚本打包，或输出 LG_MaxSD_* 到自定义 MG 目录
 ```
 
 ## 📝 插件功能计划（MaxSDPlugin）
@@ -86,7 +104,7 @@ MaxSDPlugin
 - SD 窗口布局重置、清理无效依赖
 - LGSD 节点库自动更新
 - 查错功能（默认分辨率、三面映射输入、输出通道校验等）
-- 曝光参数与开关按钮的关联设定
+- 曝光参数与开关按钮的关联设定（已完成）
 - 3D 预览窗口摄像机参数设置
 - 批量修改 Frame 的 A 值
 - 保存 SBS 副本并收集非官方、非 Library 外部依赖与 Resource

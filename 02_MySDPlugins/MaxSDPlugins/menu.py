@@ -90,9 +90,11 @@ def build_menu(menu, main_win, ctx):
 
     # 功能分类：新增分类只在此追加一行
     _add_category(menu, main_win, ctx, "Output", ".output", "show_window", "曝光参数")
+    _add_category(menu, main_win, ctx, "Output", ".preset_recovery", "show_window", "预设效果找回")
     _add_category(menu, main_win, ctx, "Output", ".batch_merge_tex_channel", "show_window", "BatchMergeTexChannel")
     _add_category(menu, main_win, ctx, "Edit", ".frame_color_modify", "show_window", "FrameColorModify")
     _add_category(menu, main_win, ctx, "Edit", ".auto_add_expose_comment", "show_window", "AutoAddExposeCommitToNode")
+    _add_category(menu, main_win, ctx, "Edit", ".switch_manager", "show_window", "开关管理工具")
     _add_category(menu, main_win, ctx, "File", ".save_with_resource", "show_window", "SaveWithResrouce")
     _add_category(menu, main_win, ctx, "Debug", ".debug", "show_window", "Publish Checker")
     _add_category(menu, main_win, ctx, "Analysis", ".sbs_file_reporter", "show_window", "SBSFileRepoter")

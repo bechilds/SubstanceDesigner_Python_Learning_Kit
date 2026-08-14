@@ -13,9 +13,10 @@
 
 操作：
   - [刷新]      重新从当前 Graph 读取参数树。
-  - [↑ 上移分组] 将选中分组在树中上移一位。
-  - [↓ 下移分组] 将选中分组在树中下移一位。
-    - [应用排序]   保存并重载 Package，通过 XML 调整参数顺序。
+    - 拖拽分组可调整分组顺序；拖拽参数可调整组内顺序或更改分组。
+    - [↑/↓]       移动选中分组或组内参数，也可使用 Ctrl+↑/Ctrl+↓。
+    - [更改分组]  将选中参数移动到已有分组。
+    - [应用排序]  保存并重载 Package，通过 XML 调整参数顺序和 Group。
   - [关闭]      关闭窗口。
 """
 
@@ -36,10 +37,94 @@ _ROLE_SNAPSHOT = (QtCore.Qt.UserRole + 1 if QtCore is not None else 33)
 if QtWidgets is not None:
 
     class _ParamTreeWidget(QtWidgets.QTreeWidget):
-        """仅响应单击选中分组，屏蔽双击展开/折叠（防止误操作）。"""
+        """约束拖拽层级，并向窗口转发排序快捷键。"""
+
+        order_changed = QtCore.Signal()
+        move_requested = QtCore.Signal(int)
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setDragEnabled(True)
+            self.setAcceptDrops(True)
+            self.setDropIndicatorShown(True)
+            self.setDefaultDropAction(QtCore.Qt.MoveAction)
+            self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+
+        def keyPressEvent(self, event):
+            if event.modifiers() & QtCore.Qt.ControlModifier:
+                if event.key() == QtCore.Qt.Key_Up:
+                    self.move_requested.emit(-1)
+                    event.accept()
+                    return
+                if event.key() == QtCore.Qt.Key_Down:
+                    self.move_requested.emit(1)
+                    event.accept()
+                    return
+            super().keyPressEvent(event)
+
+        def dropEvent(self, event):
+            selected = self.selectedItems()
+            moving_item = selected[0] if len(selected) == 1 else None
+            event_position = (
+                event.position().toPoint()
+                if hasattr(event, "position") else event.pos())
+            target_item = self.itemAt(event_position)
+            if moving_item is None or target_item is None or moving_item is target_item:
+                event.ignore()
+                return
+
+            indicator = self.dropIndicatorPosition()
+            above = QtWidgets.QAbstractItemView.AboveItem
+            below = QtWidgets.QAbstractItemView.BelowItem
+            on_item = QtWidgets.QAbstractItemView.OnItem
+            moving_is_group = bool(moving_item.data(0, _ROLE_IS_GROUP))
+            target_is_group = bool(target_item.data(0, _ROLE_IS_GROUP))
+
+            if moving_is_group:
+                if not target_is_group or indicator not in (above, below):
+                    event.ignore()
+                    return
+                root = self.invisibleRootItem()
+                source_index = root.indexOfChild(moving_item)
+                insert_index = root.indexOfChild(target_item)
+                if indicator == below:
+                    insert_index += 1
+                taken = root.takeChild(source_index)
+                if source_index < insert_index:
+                    insert_index -= 1
+                root.insertChild(insert_index, taken)
+            else:
+                source_parent = moving_item.parent()
+                if source_parent is None:
+                    event.ignore()
+                    return
+                if target_is_group:
+                    if indicator != on_item:
+                        event.ignore()
+                        return
+                    target_parent = target_item
+                    insert_index = target_parent.childCount()
+                else:
+                    target_parent = target_item.parent()
+                    if target_parent is None or indicator not in (above, below):
+                        event.ignore()
+                        return
+                    insert_index = target_parent.indexOfChild(target_item)
+                    if indicator == below:
+                        insert_index += 1
+                source_index = source_parent.indexOfChild(moving_item)
+                taken = source_parent.takeChild(source_index)
+                if source_parent is target_parent and source_index < insert_index:
+                    insert_index -= 1
+                target_parent.insertChild(insert_index, taken)
+                target_parent.setExpanded(True)
+
+            self.setCurrentItem(taken)
+            event.setDropAction(QtCore.Qt.MoveAction)
+            event.accept()
+            self.order_changed.emit()
 
         def mouseDoubleClickEvent(self, event):
-            # 双击只切换展开/折叠，不做其他操作
             super().mouseDoubleClickEvent(event)
 
     # ─────────────────────────────────────────────────────────────────────── #
@@ -63,8 +148,9 @@ if QtWidgets is not None:
 
             # 顶部说明栏
             info = QtWidgets.QLabel(
-                "树状展示当前 Graph 的 INPUT PARAMETERS 与分组。选中分组后可上/下移动，"
-                "调整完毕后点击「应用排序」保存、关闭并重新加载 Package。\n"
+                "拖拽分组可调整组顺序；拖拽参数可调整组内顺序或移入其他组。"
+                "选中项目后也可用按钮或 Ctrl+↑/Ctrl+↓ 快速移动。\n"
+                "调整完毕后点击「应用排序」保存、关闭并重新加载 Package。"
                 "INPUTS 和 OUTPUTS 不读取、不修改。工具会先创建 SBS 备份；此操作不支持 Ctrl+Z。",
                 self,
             )
@@ -85,6 +171,8 @@ if QtWidgets is not None:
             self._tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
             self._tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
             self._tree.itemSelectionChanged.connect(self._on_selection_changed)
+            self._tree.order_changed.connect(self._on_tree_order_changed)
+            self._tree.move_requested.connect(self._move_selected)
             mid_layout.addWidget(self._tree, 1)
 
             # 右侧控制按钮列
@@ -92,20 +180,24 @@ if QtWidgets is not None:
             btn_col.setAlignment(QtCore.Qt.AlignTop)
             mid_layout.addLayout(btn_col)
 
-            self._btn_up = QtWidgets.QPushButton("↑  上移分组", self)
-            self._btn_down = QtWidgets.QPushButton("↓  下移分组", self)
+            self._btn_up = QtWidgets.QPushButton("↑  上移选中项", self)
+            self._btn_down = QtWidgets.QPushButton("↓  下移选中项", self)
+            self._btn_change_group = QtWidgets.QPushButton("更改分组…", self)
             self._btn_refresh = QtWidgets.QPushButton("⟳  刷新", self)
             btn_expand = QtWidgets.QPushButton("⊞  全部展开", self)
             btn_collapse = QtWidgets.QPushButton("⊟  全部收起", self)
             self._btn_up.setEnabled(False)
             self._btn_down.setEnabled(False)
+            self._btn_change_group.setEnabled(False)
             self._btn_up.clicked.connect(self._move_group_up)
             self._btn_down.clicked.connect(self._move_group_down)
+            self._btn_change_group.clicked.connect(self._change_parameter_group)
             self._btn_refresh.clicked.connect(self._refresh)
             btn_expand.clicked.connect(self._tree.expandAll)
             btn_collapse.clicked.connect(self._tree.collapseAll)
 
-            for btn in (self._btn_up, self._btn_down, self._btn_refresh, btn_expand, btn_collapse):
+            for btn in (self._btn_up, self._btn_down, self._btn_change_group,
+                        self._btn_refresh, btn_expand, btn_collapse):
                 btn.setMinimumWidth(110)
                 btn_col.addWidget(btn)
 
@@ -163,6 +255,10 @@ if QtWidgets is not None:
                 group_item.setData(0, _ROLE_IS_GROUP, True)
                 # 存储原始 (group_name, params) 快照，供 apply 时使用
                 group_item.setData(0, _ROLE_SNAPSHOT, (group_name, params))
+                group_item.setFlags(
+                    group_item.flags()
+                    | QtCore.Qt.ItemIsDragEnabled
+                    | QtCore.Qt.ItemIsDropEnabled)
 
                 for p in params:
                     param_item = QtWidgets.QTreeWidgetItem(group_item)
@@ -171,6 +267,9 @@ if QtWidgets is not None:
                     param_item.setText(2, p["type_label"])
                     param_item.setData(0, _ROLE_IS_GROUP, False)
                     param_item.setData(0, _ROLE_SNAPSHOT, p)
+                    param_item.setFlags(
+                        (param_item.flags() | QtCore.Qt.ItemIsDragEnabled)
+                        & ~QtCore.Qt.ItemIsDropEnabled)
 
                     total_params += 1
 
@@ -190,7 +289,11 @@ if QtWidgets is not None:
             self._btn_apply.setEnabled(total_params > 0)
             self._on_selection_changed()
 
-        # ── 分组移动 ─────────────────────────────────────────────────────── #
+        # ── 分组与参数移动 ───────────────────────────────────────────────── #
+
+        def _selected_item(self):
+            selected = self._tree.selectedItems()
+            return selected[0] if selected else None
 
         def _selected_group_item(self):
             """返回当前选中的顶级分组 QTreeWidgetItem；不是分组则返回 None。"""
@@ -207,40 +310,95 @@ if QtWidgets is not None:
             return None
 
         def _on_selection_changed(self):
-            group_item = self._selected_group_item()
-            if group_item is None:
+            item = self._selected_item()
+            if item is None:
                 self._btn_up.setEnabled(False)
                 self._btn_down.setEnabled(False)
+                self._btn_change_group.setEnabled(False)
                 return
-            root = self._tree.invisibleRootItem()
-            idx = root.indexOfChild(group_item)
+            is_group = bool(item.data(0, _ROLE_IS_GROUP))
+            parent = self._tree.invisibleRootItem() if is_group else item.parent()
+            if parent is None:
+                self._btn_up.setEnabled(False)
+                self._btn_down.setEnabled(False)
+                self._btn_change_group.setEnabled(False)
+                return
+            idx = parent.indexOfChild(item)
             self._btn_up.setEnabled(idx > 0)
-            self._btn_down.setEnabled(idx < root.childCount() - 1)
+            self._btn_down.setEnabled(idx < parent.childCount() - 1)
+            self._btn_change_group.setEnabled(
+                not is_group
+                and self._tree.invisibleRootItem().childCount() > 1)
 
-        def _move_group(self, direction):
-            """direction: -1 = 上移, +1 = 下移。"""
-            group_item = self._selected_group_item()
-            if group_item is None:
+        def _move_selected(self, direction):
+            """在当前层级中移动选中的分组或参数。"""
+            item = self._selected_item()
+            if item is None:
                 return
-            root = self._tree.invisibleRootItem()
-            idx = root.indexOfChild(group_item)
+            is_group = bool(item.data(0, _ROLE_IS_GROUP))
+            parent = self._tree.invisibleRootItem() if is_group else item.parent()
+            if parent is None:
+                return
+            idx = parent.indexOfChild(item)
             new_idx = idx + direction
-            if new_idx < 0 or new_idx >= root.childCount():
+            if new_idx < 0 or new_idx >= parent.childCount():
                 return
 
-            # takeChild / insertChild 移动整个子树
-            was_expanded = group_item.isExpanded()
-            taken = root.takeChild(idx)
-            root.insertChild(new_idx, taken)
-            taken.setExpanded(was_expanded)
+            was_expanded = item.isExpanded()
+            taken = parent.takeChild(idx)
+            parent.insertChild(new_idx, taken)
+            if is_group:
+                taken.setExpanded(was_expanded)
             self._tree.setCurrentItem(taken)
-            self._on_selection_changed()
+            self._on_tree_order_changed()
 
         def _move_group_up(self):
-            self._move_group(-1)
+            self._move_selected(-1)
 
         def _move_group_down(self):
-            self._move_group(+1)
+            self._move_selected(+1)
+
+        def _change_parameter_group(self):
+            parameter_item = self._selected_item()
+            if parameter_item is None or parameter_item.data(0, _ROLE_IS_GROUP):
+                return
+            source_group = parameter_item.parent()
+            root = self._tree.invisibleRootItem()
+            target_groups = [
+                root.child(index) for index in range(root.childCount())
+                if root.child(index) is not source_group
+            ]
+            if not target_groups:
+                return
+            target_names = []
+            for group_item in target_groups:
+                group_name, _params = group_item.data(0, _ROLE_SNAPSHOT)
+                target_names.append(group_name or "（未分组）")
+            selected_name, accepted = QtWidgets.QInputDialog.getItem(
+                self, "更改参数分组", "目标分组：", target_names, 0, False)
+            if not accepted:
+                return
+            target_group = target_groups[target_names.index(selected_name)]
+            source_index = source_group.indexOfChild(parameter_item)
+            taken = source_group.takeChild(source_index)
+            target_group.addChild(taken)
+            target_group.setExpanded(True)
+            self._tree.setCurrentItem(taken)
+            self._on_tree_order_changed()
+
+        def _update_group_labels(self):
+            root = self._tree.invisibleRootItem()
+            for index in range(root.childCount()):
+                group_item = root.child(index)
+                group_name, _params = group_item.data(0, _ROLE_SNAPSHOT)
+                display_group = group_name if group_name else "（未分组）"
+                group_item.setText(
+                    0, f"{display_group}  ({group_item.childCount()} 个参数)")
+
+        def _on_tree_order_changed(self):
+            self._update_group_labels()
+            self._on_selection_changed()
+            self._set_status("排序已调整；点击「应用排序」写入当前 SBS。")
 
         # ── 应用排序 ─────────────────────────────────────────────────────── #
 
@@ -250,9 +408,20 @@ if QtWidgets is not None:
             result = []
             for i in range(root.childCount()):
                 group_item = root.child(i)
-                snap = group_item.data(0, _ROLE_SNAPSHOT)
-                if snap is not None:
-                    result.append(snap)
+                group_snapshot = group_item.data(0, _ROLE_SNAPSHOT)
+                if group_snapshot is None:
+                    continue
+                group_name, _original_parameters = group_snapshot
+                parameters = []
+                for child_index in range(group_item.childCount()):
+                    parameter_snapshot = group_item.child(child_index).data(
+                        0, _ROLE_SNAPSHOT)
+                    if parameter_snapshot is None:
+                        continue
+                    current_snapshot = dict(parameter_snapshot)
+                    current_snapshot["group"] = group_name
+                    parameters.append(current_snapshot)
+                result.append((group_name, parameters))
             return result
 
         def _apply_sort(self):

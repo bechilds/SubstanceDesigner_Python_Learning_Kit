@@ -7,8 +7,9 @@
 
 ## 功能概览
 - 只扫描 `isConnectable() == False` 的 INPUT PARAMETERS，并按 Group 树状展示。
-- 支持刷新、全部展开/收起，以及上移或下移顶级分组。
-- 应用前保存当前 SBS 并创建时间戳备份，只在目标 INPUT PARAMETERS 的原 XML 槽位之间重排完整 `<paraminput>` 节点。
+- 支持拖拽顶级分组调整组顺序，以及拖拽参数调整组内顺序或移入其他组。
+- 支持按钮和 `Ctrl+↑` / `Ctrl+↓` 快速移动选中的分组或组内参数，并可通过“更改分组…”把参数移到已有组。
+- 应用前保存当前 SBS 并创建时间戳备份，只在目标 INPUT PARAMETERS 的原 XML 槽位之间重排完整 `<paraminput>` 节点；改组参数会同步直接 `<group>` 与 metadata Group。
 - INPUTS、OUTPUTS、其他 Graph 和 Explorer 中其他 Package 均不读取、不修改。
 - 扫描后切换 Graph 或 SBS 会触发范围校验并中止操作。
 
@@ -19,10 +20,10 @@
 | 文件 / 函数 | 职责 |
 |---|---|
 | `__init__.py / show_window()` | 兼容入口，由曝光参数面板的排序按钮调用 |
-| `sorting_window.py / ExposeParamSortingDialog` | 参数树、分组移动、范围提示和应用确认 |
+| `sorting_window.py / ExposeParamSortingDialog` | 参数树、受约束拖拽、组内排序、参数改组、范围提示和应用确认 |
 | `sorting_logic.py / collect_groups()` | 获取当前 Graph 的非连接型 INPUT PARAMETERS |
 | `sorting_logic.py / get_graph_scope()` | 记录当前 SBS 路径、Package UID 和 Graph ID |
-| `sorting_logic.py / _stage_reordered_xml()` | 在临时 SBS 中重排目标 Graph 的 `<paraminput>` 节点并验证 XML |
+| `sorting_logic.py / _stage_reordered_xml()` | 在临时 SBS 中同步参数 Group、重排目标 Graph 的 `<paraminput>` 节点并验证 XML |
 | `sorting_logic.py / apply_group_order()` | 保存、备份、卸载、原子替换、重新加载及失败恢复 |
 
 ---

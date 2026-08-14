@@ -81,29 +81,34 @@ if QtWidgets is not None:
         def _build_ui(self):
             layout = QtWidgets.QVBoxLayout(self)
 
-            rules_box = QtWidgets.QGroupBox("当前评分规则", self)
+            self._report_content = QtWidgets.QWidget(self)
+            report_layout = QtWidgets.QVBoxLayout(self._report_content)
+            report_layout.setContentsMargins(0, 0, 0, 0)
+
+            rules_box = QtWidgets.QGroupBox("当前评分规则", self._report_content)
             rules_layout = QtWidgets.QVBoxLayout(rules_box)
             self._rules = QtWidgets.QLabel(
                 "统计范围：从 Published Output 反向遍历；未连接到输出的节点不计分。\n"
                 "节点得分 = 基础类型权重 x 像素系数 x 参数系数 x 输出系数。\n"
                 "尺寸基准：1024 x 1024 = 1.00；动态尺寸无法静态确定时按 1K 估算并明确标记。\n"
-                "分支规则：Current 只统计当前 Switch 路径；Potential Maximum 统计所有潜在分支。\n"
-                "文件风险：节点/依赖丢失 +60，Resource 丢失 +40；官方节点库和 D:\\LG_SDNodes 可信，其他本地依赖 +15、Resource +10。\n"
-                "等级阈值：Low <= 50，Medium <= 120，High <= 200，Very High > 200。",
+                "分支规则：Current 统计当前 Switch 路径；Potential Maximum 在每个 Switch 选择最高成本分支。\n"
+                "文件健康：缺失内容记为 Error，非标准本地路径记为 Warning；不再加入复杂度分。\n"
+                "等级阈值：Low <= 150，Medium <= 400，High <= 800，Very High > 800。",
                 self)
             self._rules.setWordWrap(True)
             rules_layout.addWidget(self._rules)
-            layout.addWidget(rules_box)
+            report_layout.addWidget(rules_box)
 
-            score_box = QtWidgets.QGroupBox("评分结果", self)
+            score_box = QtWidgets.QGroupBox("评分结果", self._report_content)
             score_layout = QtWidgets.QVBoxLayout(score_box)
             self._score = QtWidgets.QLabel("等待检查", self)
             self._score.setWordWrap(True)
             score_layout.addWidget(self._score)
-            layout.addWidget(score_box)
+            report_layout.addWidget(score_box)
 
-            tabs = QtWidgets.QTabWidget(self)
-            layout.addWidget(tabs, 1)
+            tabs = QtWidgets.QTabWidget(self._report_content)
+            report_layout.addWidget(tabs, 1)
+            layout.addWidget(self._report_content, 1)
 
             cost_page = QtWidgets.QWidget(self)
             cost_layout = QtWidgets.QVBoxLayout(cost_page)
@@ -138,14 +143,17 @@ if QtWidgets is not None:
             row = QtWidgets.QHBoxLayout()
             refresh_button = QtWidgets.QPushButton("重新检查", self)
             locate_button = QtWidgets.QPushButton("定位高成本节点", self)
+            save_report_button = QtWidgets.QPushButton("保存报告截图", self)
             publish_button = QtWidgets.QPushButton("Publish Anyway", self)
             cancel_button = QtWidgets.QPushButton("Cancel", self)
             refresh_button.clicked.connect(self._refresh)
             locate_button.clicked.connect(self._locate_expensive_node)
+            save_report_button.clicked.connect(self._save_report_screenshot)
             publish_button.clicked.connect(self._publish)
             cancel_button.clicked.connect(self.reject)
             row.addWidget(refresh_button)
             row.addWidget(locate_button)
+            row.addWidget(save_report_button)
             row.addStretch(1)
             row.addWidget(publish_button)
             row.addWidget(cancel_button)
@@ -179,10 +187,11 @@ if QtWidgets is not None:
                 f"{report['current_score']:.2f} / {report['current_level']}</span>　　"
                 f"<b>Potential Maximum：</b><span style='font-size:18px;color:{potential_color}'>"
                 f"{report['potential_score']:.2f} / {report['potential_level']}</span><br>"
-                f"Current = 复杂度 {report['current_complexity_score']:.2f} + "
-                f"文件风险 {report['file_risk_score']:.2f}　　"
-                f"Potential = 复杂度 {report['potential_complexity_score']:.2f} + "
-                f"文件风险 {report['file_risk_score']:.2f}<br>"
+                f"Current 复杂度 {report['current_complexity_score']:.2f}　　"
+                f"Potential 复杂度 {report['potential_complexity_score']:.2f}　　"
+                f"全部分支总量 {report['all_branches_complexity_score']:.2f}<br>"
+                f"<b>文件健康：</b>{report['file_health']}"
+                f"（{len(report['risk_items'])} 项文件问题，不计入复杂度）<br>"
                 f"<span style='color:#aaaaaa'>{report['resolution_basis']}</span>")
             self._histogram.set_bins(report["score_histogram"])
             self._fill_nodes(report["nodes"])
@@ -239,6 +248,37 @@ if QtWidgets is not None:
             if message:
                 method = QtWidgets.QMessageBox.information if ok else QtWidgets.QMessageBox.warning
                 method(self, "SBSFileRepoter", message)
+
+        def _save_report_screenshot(self):
+            """把规则、评分和当前报告页保存为 PNG，不包含底部操作按钮。"""
+            if self._report is None:
+                QtWidgets.QMessageBox.information(
+                    self, "SBSFileRepoter", "当前没有可保存的报告，请先完成检查。")
+                return
+            try:
+                package = self._graph.getPackage() if self._graph is not None else None
+                package_path = str(package.getFilePath() or "") if package is not None else ""
+                if package_path:
+                    base_path = os.path.splitext(package_path)[0]
+                else:
+                    safe_name = os.path.splitext(self._report["file_name"])[0]
+                    base_path = os.path.abspath(safe_name if safe_name else "sbs_report")
+                default_path = base_path + "_complexity_report.png"
+                output_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+                    self, "保存复杂度报告截图", default_path, "PNG 图片 (*.png)")
+                if not output_path:
+                    return
+                if not output_path.lower().endswith(".png"):
+                    output_path += ".png"
+                pixmap = self._report_content.grab()
+                if pixmap.isNull() or not pixmap.save(output_path, "PNG"):
+                    raise RuntimeError("Qt 无法生成或写入 PNG 图片")
+                QtWidgets.QMessageBox.information(
+                    self, "SBSFileRepoter", f"报告截图已保存：\n{output_path}")
+            except Exception as error:
+                QtWidgets.QMessageBox.critical(
+                    self, "SBSFileRepoter", f"保存报告截图失败：{error}")
+                print(f"{_LOG} 保存报告截图失败: {error}")
 
         def _publish(self):
             if self._graph is None:
