@@ -5,6 +5,8 @@
 由 MaxSDPlugin.py 注册到 `MaxSDPlugin/Output` 子菜单。
 """
 
+TOOL_VERSION = "0.21.2"
+
 from .exposed_parameters_window import show_window
 
 __all__ = ["show_window"]

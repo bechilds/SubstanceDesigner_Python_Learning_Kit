@@ -8,6 +8,8 @@ import shutil
 import tempfile
 import xml.etree.ElementTree as ET
 
+from .. import sdcompat
+
 _LOG = "[MaxSDPlugin/ExposeParamSorting]"
 
 try:
@@ -15,11 +17,8 @@ try:
 except Exception:
     SDPropertyCategory = None
 
-try:
-    from sd.api.apiexception import APIException
-    _SD_ERRORS = (Exception, APIException)
-except Exception:
-    _SD_ERRORS = (Exception,)
+APIException = sdcompat.APIException
+_SD_ERRORS = sdcompat.SD_API_ERRORS
 
 
 def _scalar_text(value):

@@ -18,6 +18,18 @@
 
 _LOG = "[MaxSDPlugin/compat]"
 
+# Adobe APIException 在部分宿主中直接继承 BaseException；不捕获退出/中断异常。
+try:
+    from sd.api.apiexception import APIException
+except ImportError:
+    APIException = Exception
+SD_API_ERRORS = (Exception, APIException)
+
+
+def error_text(error):
+    """Adobe 异常的 str 可能为空，保留类型/参数以便排错。"""
+    return str(error) or repr(error)
+
 
 # --------------------------------------------------------------------------- #
 # Qt 绑定解析（PySide6 优先，PySide2 回退）
@@ -29,11 +41,11 @@ PYSIDE = None
 try:
     from PySide6 import QtWidgets, QtCore, QtGui
     PYSIDE = "PySide6"
-except Exception:
+except SD_API_ERRORS:
     try:
         from PySide2 import QtWidgets, QtCore, QtGui
         PYSIDE = "PySide2"
-    except Exception as _e:  # pragma: no cover - 仅非 SD/无 Qt 环境
+    except SD_API_ERRORS as _e:  # pragma: no cover - 仅非 SD/无 Qt 环境
         print(f"{_LOG} PySide 不可用: {_e}")
 
 
@@ -52,7 +64,7 @@ def qt_patch():
             QtWidgets.QAction = QtGui.QAction
         if QtGui is not None and not hasattr(QtGui, "QAction") and hasattr(QtWidgets, "QAction"):
             QtGui.QAction = QtWidgets.QAction
-    except Exception:
+    except SD_API_ERRORS:
         pass
     # exec / exec_ 互为别名（部分 Shiboken 类型不可赋属性 -> 包 try）
     for _cn in ("QMenu", "QDialog", "QApplication", "QMessageBox", "QFileDialog", "QInputDialog"):
@@ -64,7 +76,7 @@ def qt_patch():
                 _cls.exec = _cls.exec_
             if not hasattr(_cls, "exec_") and hasattr(_cls, "exec"):
                 _cls.exec_ = _cls.exec
-        except Exception:
+        except SD_API_ERRORS:
             pass
 
 
@@ -95,7 +107,7 @@ def get_app(app=None):
     try:
         import sd
         return sd.getContext().getSDApplication()
-    except Exception as e:
+    except SD_API_ERRORS as e:
         print(f"{_LOG} 取 SDApplication 失败: {e}")
         return None
 
@@ -114,7 +126,7 @@ def _ui_mgrs(app):
             m = fn()
             if m is not None and m not in mgrs:
                 mgrs.append(m)
-        except Exception:
+        except SD_API_ERRORS:
             pass
     return mgrs
 
@@ -131,7 +143,7 @@ def get_current_graph(app=None):
                 g = fn()
                 if g is not None:
                     return g
-            except Exception:
+            except SD_API_ERRORS:
                 pass
     return None
 
@@ -148,7 +160,7 @@ def get_main_window(app=None):
                 w = fn()
                 if w is not None:
                     return w
-            except Exception:
+            except SD_API_ERRORS:
                 pass
     return None
 
@@ -177,7 +189,7 @@ def focus_node(graph, node_id, app=None):
         return False, "取不到 SDApplication。"
     try:
         node = graph.getNodeFromId(node_id)
-    except Exception as e:
+    except SD_API_ERRORS as e:
         return False, f"取节点失败: {e}"
     if node is None:
         return False, f"未找到节点: {node_id}"
@@ -196,14 +208,14 @@ def focus_node(graph, node_id, app=None):
                         if m.getGraphFromGraphViewID(vid) is graph:
                             target_vid = vid
                             break
-                    except Exception:
+                    except SD_API_ERRORS:
                         pass
                 if target_vid is None and cnt > 0:
                     target_vid = m.getGraphViewIDAt(0)
                 if target_vid is not None:
                     m.focusGraphNode(target_vid, node)
                     return True, ""
-            except Exception as e:
+            except SD_API_ERRORS as e:
                 print(f"{_LOG} focusGraphNode 失败: {e}")
 
     # 策略2：选中/高亮节点（若某版本提供 set/select 接口）
@@ -216,10 +228,10 @@ def focus_node(graph, node_id, app=None):
             try:
                 try:
                     fn([node])
-                except Exception:
+                except SD_API_ERRORS:
                     fn(node)
                 return True, "已选中节点（该 SD 版本不支持自动居中，请在图中查看高亮）。"
-            except Exception as e:
+            except SD_API_ERRORS as e:
                 print(f"{_LOG} {sel} 失败: {e}")
 
     # 策略3（SD13 等无 focusGraphNode 时）：Qt 层用 node.getPosition() 在图视图
@@ -249,7 +261,7 @@ def _copy_to_clipboard(text):
             return False
         cb.setText(text)
         return True
-    except Exception as e:
+    except SD_API_ERRORS as e:
         print(f"{_LOG} 复制剪贴板失败: {e}")
         return False
 
@@ -261,7 +273,7 @@ def _node_desc(node, node_id):
         d = node.getDefinition()
         if d is not None:
             label = d.getLabel() or d.getId() or ""
-    except Exception:
+    except SD_API_ERRORS:
         pass
     pos_str = _node_pos_str(node)
     head = f"{label} (id:{node_id})" if label else f"id:{node_id}"
@@ -272,18 +284,18 @@ def _node_pos_str(node):
     """节点在图里的坐标 (x, y)，取不到返回空串（不抛）。已在 SD13 验证可用。"""
     try:
         pos = node.getPosition()
-    except Exception:
+    except SD_API_ERRORS:
         return ""
     x = getattr(pos, "x", None)
     y = getattr(pos, "y", None)
     if x is None or y is None:
         try:
             x, y = pos[0], pos[1]
-        except Exception:
+        except SD_API_ERRORS:
             return ""
     try:
         return f"({x:.0f}, {y:.0f})"
-    except Exception:
+    except SD_API_ERRORS:
         return ""
 
 
@@ -294,7 +306,7 @@ def _isvalid_fn():
             mod = __import__(modname, fromlist=["isValid"])
             if hasattr(mod, "isValid"):
                 return mod.isValid
-        except Exception:
+        except SD_API_ERRORS:
             pass
     return None
 
@@ -314,7 +326,7 @@ def _graph_views(app):
     out = []
     try:
         widgets = list(qapp.allWidgets())
-    except Exception as e:
+    except SD_API_ERRORS as e:
         print(f"{_LOG} allWidgets 失败: {e}")
         return []
     for w in widgets:
@@ -326,7 +338,7 @@ def _graph_views(app):
             if not w.isVisible():
                 continue
             out.append(w)
-        except Exception:
+        except SD_API_ERRORS:
             pass
     return out
 
@@ -346,11 +358,11 @@ def _frame_in_view(view, scene, x, y):
             item = None
             try:
                 item = scene.itemAt(pt, view.transform())
-            except Exception:
+            except SD_API_ERRORS:
                 # 少数绑定的 itemAt 只接受一个参数
                 try:
                     item = scene.itemAt(pt)
-                except Exception:
+                except SD_API_ERRORS:
                     item = None
             if item is not None:
                 top = item
@@ -358,14 +370,14 @@ def _frame_in_view(view, scene, x, y):
                     tl = item.topLevelItem()
                     if tl is not None:
                         top = tl
-                except Exception:
+                except SD_API_ERRORS:
                     pass
                 br = top.sceneBoundingRect()
                 if br is not None and br.width() > 1 and br.height() > 1:
                     m = max(br.width(), br.height()) * 0.05  # 几乎贴边框住节点，最大化放大
                     rect = br.adjusted(-m, -m, m, m)
                     mode = "节点图元"
-    except Exception as e:
+    except SD_API_ERRORS as e:
         print(f"{_LOG} [locate] 取节点图元失败: {e}")
     # 2) 没命中图元：用固定大小窗口（图坐标==场景坐标，已验证）
     if rect is None and QtCore is not None:
@@ -374,16 +386,16 @@ def _frame_in_view(view, scene, x, y):
     # 3) fitInView 缩放+居中；失败回退只居中
     try:
         view.fitInView(rect, QtCore.Qt.KeepAspectRatio)
-    except Exception as e:
+    except SD_API_ERRORS as e:
         print(f"{_LOG} [locate] fitInView 失败, 回退 centerOn: {e}")
         try:
             view.centerOn(x, y)
-        except Exception:
+        except SD_API_ERRORS:
             pass
         return "仅居中(缩放失败)"
     try:
         view.centerOn(x, y)
-    except Exception:
+    except SD_API_ERRORS:
         pass
     return f"缩放+居中({mode})"
 
@@ -398,14 +410,14 @@ def _try_center_on_node(app, node):
     # 1) 节点图坐标
     try:
         pos = node.getPosition()
-    except Exception as e:
+    except SD_API_ERRORS as e:
         return False, f"getPosition 失败: {e}"
     x = getattr(pos, "x", None)
     y = getattr(pos, "y", None)
     if x is None or y is None:
         try:
             x, y = pos[0], pos[1]
-        except Exception:
+        except SD_API_ERRORS:
             return False, "节点位置无 x/y"
     x = float(x)
     y = float(y)
@@ -426,14 +438,14 @@ def _try_center_on_node(app, node):
             inside = False
             try:
                 inside = bool(ibr is not None and ibr.contains(x, y))
-            except Exception:
+            except SD_API_ERRORS:
                 inside = False
             if fallback is None:
                 fallback = v
             if inside:
                 info = _frame_in_view(v, sc, x, y)
                 return True, f"已定位到节点 ({x:.0f}, {y:.0f})【{info}】"
-        except Exception:
+        except SD_API_ERRORS:
             pass
 
     # 3) 没有场景命中：尽力定位第一个可见视图
@@ -443,7 +455,7 @@ def _try_center_on_node(app, node):
                 info = _frame_in_view(fallback, fallback.scene(), x, y)
                 return True, (f"已尝试定位到 ({x:.0f}, {y:.0f})（{info}，未精确命中场景，"
                               "若位置不对请反馈日志）")
-        except Exception as e:
+        except SD_API_ERRORS as e:
             return False, f"兜底 fitInView 失败: {e}"
     return False, "所有候选视图均已失效或不可用"
 

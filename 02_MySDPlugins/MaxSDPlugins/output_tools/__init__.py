@@ -5,6 +5,8 @@
 对外暴露 `show_window(main_win)` 入口，由 menu.py 注册到 `MaxSDPlugin/OutputTools`。
 """
 
+TOOL_VERSION = "0.23.0"
+
 from .output_tools import show_window
 
 __all__ = ["show_window"]

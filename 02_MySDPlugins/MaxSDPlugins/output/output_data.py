@@ -18,20 +18,16 @@ from .. import sdcompat  # 跨版本 SD/Qt 接口兼容层（唯一真源）
 # SD 专有类型：用 try 包住，工作区 lint 找不到属正常
 try:
     from sd.api.sdproperty import SDPropertyCategory
-except Exception:  # pragma: no cover - 仅在非 SD 环境触发
+except sdcompat.SD_API_ERRORS:  # pragma: no cover - 仅在非 SD 环境触发
     SDPropertyCategory = None
 
 try:
     from sd.api.sdvalueserializer import SDValueSerializer
-except Exception:  # pragma: no cover
+except sdcompat.SD_API_ERRORS:  # pragma: no cover
     SDValueSerializer = None
 
-try:
-    from sd.api.apiexception import APIException
-    _SD_API_ERRORS = (Exception, APIException)
-except Exception:  # pragma: no cover
-    APIException = None
-    _SD_API_ERRORS = (Exception,)
+APIException = sdcompat.APIException  # 保留旧符号，定义集中在兼容层。
+_SD_API_ERRORS = sdcompat.SD_API_ERRORS
 
 # OutputData 文件名与数据结构版本
 OUTPUT_DATA_FILENAME = "OutputData.json"
@@ -59,7 +55,7 @@ def get_package_file_path(graph):
             return None
         path = pkg.getFilePath()
         return path or None
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 获取 package 路径失败: {e}")
         return None
 
@@ -86,7 +82,7 @@ def _value_to_str(value):
         if SDValueSerializer is not None:
             return SDValueSerializer.sToString(value)
         return str(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return str(value)
 
 
@@ -97,14 +93,14 @@ def _type_id(prop):
         if t is None:
             return ""
         return t.getId() if hasattr(t, "getId") else str(t)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return ""
 
 
 def _safe_graph_value(graph, prop):
     try:
         return graph.getPropertyValue(prop)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return None
 
 
@@ -156,7 +152,7 @@ def _read_annotation_text(graph, prop, annotation_id):
         if value is None:
             return ""
         return scalar_value_to_text(_value_to_str(value)) or ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return ""
 
 
@@ -229,13 +225,13 @@ def collect_exposed_parameters(graph):
         return result
     try:
         props = graph.getProperties(SDPropertyCategory.Input)
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 读取输入属性失败: {e}")
         return result
 
     try:
         count = len(props)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         count = 0
     referenced_ids = _collect_node_referenced_parameter_ids(graph)
 
@@ -248,7 +244,7 @@ def collect_exposed_parameters(graph):
 
             try:
                 connectable = bool(prop.isConnectable())
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 connectable = False
 
             result.append({
@@ -263,7 +259,7 @@ def collect_exposed_parameters(graph):
                 "editor": _read_annotation_text(graph, prop, "editor"),
                 "referenced": pid in referenced_ids,
             })
-        except Exception as e:
+        except sdcompat.SD_API_ERRORS as e:
             print(f"{_LOG} 跳过一个无法读取的参数: {e}")
     return result
 
@@ -297,7 +293,7 @@ def _graph_identifier(graph):
             return graph.getIdentifier()
         if hasattr(graph, "getUrl"):
             return graph.getUrl()
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return ""
 
@@ -352,7 +348,7 @@ def _undo_group(name):
     try:
         from sd.api.sdhistoryutils import SDHistoryUtils
         return SDHistoryUtils.UndoGroup(name)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         import contextlib
         return contextlib.nullcontext()
 
@@ -362,7 +358,7 @@ def _new_string_value(text):
     try:
         from sd.api.sdvaluestring import SDValueString
         return SDValueString.sNew(text or "")
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 创建字符串参数值失败: {e}")
         return None
 
@@ -789,7 +785,7 @@ def _is_get_function_node(fnode):
             return True
         lbl = (d.getLabel() or "") if d else ""
         return lbl.lower().startswith("get")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
 
 
@@ -803,9 +799,9 @@ def _graph_input_ids(graph):
         for i in range(len(props)):
             try:
                 ids.add(props[i].getId())
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 pass
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return ids
 
@@ -827,26 +823,26 @@ def _collect_get_var_status(func_graph, valid_ids=None):
     try:
         fnodes = func_graph.getNodes()
         n = len(fnodes)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return names, has_empty
     set_names = _collect_set_var_names(func_graph)
     for i in range(n):
         try:
             fnode = fnodes[i]
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         if not _is_get_function_node(fnode):
             continue
         try:
             cval = fnode.getPropertyValueFromId("__constant__", SDPropertyCategory.Input)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             cval = None
         if cval is None:
             has_empty = True
             continue
         try:
             s = scalar_value_to_text(_value_to_str(cval)) or ""
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             s = ""
         if s == "":
             has_empty = True
@@ -868,7 +864,7 @@ def _collect_set_var_names(func_graph):
             try:
                 d = fn.getDefinition()
                 did = (d.getId() or "").lower() if d else ""
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 did = ""
             if "set" not in did:
                 continue
@@ -877,9 +873,9 @@ def _collect_set_var_names(func_graph):
                 s = _strip_quotes(_value_to_str(cval)) or ""
                 if s:
                     out.add(s)
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 pass
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return out
 
@@ -910,7 +906,7 @@ def _reset_dependent_node_params(graph, var_ids):
     try:
         nodes = graph.getNodes()
         ncount = len(nodes)
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 读取节点失败，跳过重置: {e}")
         return 0
     for i in range(ncount):
@@ -918,13 +914,13 @@ def _reset_dependent_node_params(graph, var_ids):
             node = nodes[i]
             props = node.getProperties(SDPropertyCategory.Input)
             pcount = len(props)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         for j in range(pcount):
             try:
                 prop = props[j]
                 pg = node.getPropertyGraph(prop)
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 pg = None
             if not pg:
                 continue
@@ -976,31 +972,31 @@ def _reset_broken_node_functions(graph, deleted_ids, node_ids=None):
     try:
         nodes = graph.getNodes()
         ncount = len(nodes)
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 读取节点失败，跳过损坏函数扫描: {e}")
         return 0
     for i in range(ncount):
         try:
             node = nodes[i]
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         if only is not None:
             try:
                 if (node.getIdentifier() or "") not in only:
                     continue
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 continue
         for cat in categories:
             try:
                 props = node.getProperties(cat)
                 pcount = len(props)
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 continue
             for j in range(pcount):
                 try:
                     prop = props[j]
                     pg = node.getPropertyGraph(prop)
-                except Exception:
+                except sdcompat.SD_API_ERRORS:
                     pg = None
                 if not pg:
                     continue
@@ -1011,7 +1007,7 @@ def _reset_broken_node_functions(graph, deleted_ids, node_ids=None):
                     if input_is_empty and (has_empty or (names & deleted)):
                         node.deletePropertyGraph(prop)
                         reset_count += 1
-                except Exception as e:
+                except sdcompat.SD_API_ERRORS as e:
                     print(f"{_LOG} 重置某损坏节点参数失败（已跳过）: {e}")
     return reset_count
 
@@ -1046,7 +1042,7 @@ def delete_exposed_parameters(graph, ids):
                     continue
                 graph.deleteProperty(prop)
                 deleted.append(pid)
-            except Exception as e:
+            except sdcompat.SD_API_ERRORS as e:
                 failed.append((pid, str(e)))
         # 3) 删除后兜底：扫描并重置残留的损坏 Get 函数（变量名已空）
         reset += _reset_broken_node_functions(graph, ids)
@@ -1054,7 +1050,7 @@ def delete_exposed_parameters(graph, ids):
     try:
         with _undo_group("MaxSDPlugin 删除曝光参数"):
             _do()
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 删除时出现异常，已尽量完成: {e}")
     print(f"{_LOG} 删除完成：成功 {len(deleted)} 个，失败 {len(failed)} 个，重置节点参数 {reset} 个")
     return deleted, failed, reset
@@ -1064,12 +1060,12 @@ def _node_label(node):
     """节点显示名：定义标签 + 标识符，便于在图里定位。"""
     try:
         ident = node.getIdentifier() or ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         ident = ""
     try:
         d = node.getDefinition()
         lbl = (d.getLabel() or d.getId()) if d else ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         lbl = ""
     return f"{lbl} (id:{ident})" if ident else (lbl or "<未知节点>")
 
@@ -1092,20 +1088,20 @@ def collect_broken_nodes(graph):
     try:
         nodes = graph.getNodes()
         ncount = len(nodes)
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 读取节点失败，跳过损坏节点扫描: {e}")
         return out
     for i in range(ncount):
         try:
             node = nodes[i]
             nid = node.getIdentifier() or ""
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         broken_prop = ""
         for cat in categories:
             try:
                 props = node.getProperties(cat)
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 continue
             for j in range(len(props)):
                 try:
@@ -1117,7 +1113,7 @@ def collect_broken_nodes(graph):
                             node, props[j]):
                         broken_prop = props[j].getId()
                         break
-                except Exception:
+                except sdcompat.SD_API_ERRORS:
                     continue
             if broken_prop:
                 break
@@ -1138,7 +1134,7 @@ def delete_node(graph, node_id):
         with _undo_group("MaxSDPlugin 删除节点"):
             graph.deleteNode(node)
         return True, ""
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         return False, f"删除失败: {e}"
 
 
@@ -1166,7 +1162,7 @@ def repair_broken_node_functions(graph, node_ids=None):
     try:
         with _undo_group("MaxSDPlugin 重置损坏的节点函数"):
             reset = _reset_broken_node_functions(graph, [], node_ids=node_ids)
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 重置损坏函数时出现异常，已尽量完成: {e}")
     print(f"{_LOG} 重置损坏函数完成：共重置 {reset} 个节点参数")
     return reset
@@ -1196,7 +1192,7 @@ def _build_sdvalue(type_id, raw):
         if "float" in tid and not any(v in tid for v in ("float2", "float3", "float4")):
             from sd.api.sdvaluefloat import SDValueFloat
             return SDValueFloat.sNew(float(scalar_text))
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 还原值失败（type={type_id}, raw={raw}）: {e}")
         return None
     return None
@@ -1220,7 +1216,7 @@ def apply_output_data(graph, data):
         pid = p.get("id")
         try:
             prop = graph.getPropertyFromId(pid, SDPropertyCategory.Input)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             prop = None
         if prop is None:
             summary["missing"].append(pid)
@@ -1232,14 +1228,14 @@ def apply_output_data(graph, data):
         try:
             graph.setPropertyValue(prop, sdval)
             summary["restored"].append(pid)
-        except Exception as e:
+        except sdcompat.SD_API_ERRORS as e:
             summary["skipped"].append((pid, str(e)))
 
     try:
         with _undo_group("MaxSDPlugin 加载并应用 OutputData"):
             for p in params:
                 _apply_one(p)
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 应用时出现异常，已尽量完成: {e}")
     print(
         f"{_LOG} 应用完成：还原 {len(summary['restored'])} 个，"

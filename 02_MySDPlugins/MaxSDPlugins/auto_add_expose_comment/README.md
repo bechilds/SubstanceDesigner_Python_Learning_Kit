@@ -1,11 +1,26 @@
 # 自动添加曝光参数描述 (AutoAddExposeCommitToNode)
 
+> 当前开发工具版本：v0.15.6（`__init__.py/TOOL_VERSION`）；随插件 v0.25.0 升级。此版本号不代表 MG 已发布版本。
+
 扫描当前 SBS 文件的所有 Graph，在使用曝光参数的节点下方 75 像素处创建或更新 Comment。
 菜单位置：`MaxSDPlugin/Edit/AutoAddExposeCommitToNode`。
 
 ---
 
 ## 功能概览
+
+### 使用流程
+
+<whiteboard type="mermaid">
+flowchart TD
+    A[打开目标 SBS 与 Graph] --> B[扫描 Package 中的曝光引用]
+    B --> C[核对勾选节点与拟写 Comment]
+    C --> D{输入与目标确认无误?}
+    D -- 否 --> B
+    D -- 是 --> E[确认后覆盖或追加 Comment]
+    E --> F[检查画布并保存 SBS]
+</whiteboard>
+
 - 遍历当前 Package 的全部 Graph 和节点属性函数，定位真正引用曝光参数的节点。
 - “扫描预览”阶段严格只读，先列出 Graph、节点、节点属性、参数 ID/Label、已有 Comment、目标位置和拟执行操作。
 - 选中计划项时显示最终拟写文本；只有勾选并点击“应用选中项”、再次确认后才修改 Graph。
@@ -55,3 +70,11 @@
 - 参数没有 Group 或 Group 注解读取失败时，仅输出 `-参数`，不会添加空的分组前缀。
 - SD13 的公开 Python 绑定没有 `SDGraphObjectComment`，因此创建 Comment 需要 SD14 或更高版本。
 - 修复旧版本生成的错位 Comment 时，重新扫描后选择“覆盖原 Comment 内容”并应用，可修正位置且避免重复追加文本。
+
+## 框架升级说明
+
+本工具公开入口和原有参数保持不变。窗口统一由 `shared.lifecycle` 管理：重复打开复用、关闭释放；插件重载会关闭窗口。未保存的界面配置请先处理。升级包含入口变更，需要重启 Designer 一次。离线回归不替代目标 Designer 中的实际功能和撤销验证。
+
+## 更新日志
+
+- 2026-09-04 · v0.15.6 · 接入统一窗口生命周期 · 本工具入口与错误处理 · 随插件 v0.25.0 升级需重启 SD

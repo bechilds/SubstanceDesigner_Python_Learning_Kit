@@ -3,7 +3,6 @@
 本项目用于学习substance designer的 python脚本开发，通过Vscode 编写代码
 借助AI工具 进行代码生成
 
-
 ## 📁 Project Structure
 
 本工程按**三个分类**组织，每个分类目录下都有独立的 `README.md` 说明：

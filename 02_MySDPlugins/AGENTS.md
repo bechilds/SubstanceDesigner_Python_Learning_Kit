@@ -53,6 +53,7 @@ MaxSDPlugins/
 - **根目录（MaxSDPlugins/）只放入口文件、菜单/版本等框架文件与文档**，业务功能放各功能文件夹，不在根目录放独立业务 `.py`。
 - 每个功能文件夹必须有 `__init__.py`，让它成为可 import 的包。
 - `shared/`：仅插件内部、跨功能共用的小工具；`../utilities/`：更通用、可能脱离本插件复用的工具。拿不准放 `shared/`。
+- 每个可独立使用的功能包必须在自己的 `__init__.py` 中声明 `TOOL_VERSION = "X.Y.Z"`。该版本表示工具自身功能版本，不得直接复用插件总版本 `MaxSDPlugins/_version.py`。
 
 ### 1.2 命名约定
 
@@ -75,7 +76,7 @@ MaxSDPlugins/
   qt_ui = app.getQtForPythonUIMgr()
   main_win = qt_ui.getMainWindow() if qt_ui else None
   ```
-- **菜单创建必须幂等**：先遍历已存在的菜单项判断有没有同名 `MaxSDPlugin`，有就复用，避免"越加载菜单越多"。
+- **菜单创建必须幂等**：先遍历已存在的菜单项判断有没有同名 `MaxSDPlugin`，有就移除并释放旧对象，再创建，避免"越加载菜单越多"。
 - **`uninitializeSDPlugin()` 必须把本插件加的菜单/动作/事件/定时器全部清理干净**，并把模块级引用置 `None`。
 - **菜单数据驱动（避免每次改菜单都动入口）**：入口只创建顶级 `MaxSDPlugin` 菜单骨架，再调用可热重载的 `MaxSDPlugins/menu.py` 的 `build_menu(menu, main_win, ctx)` 填充所有菜单项（版本号、关于、重载、各功能分类）。
   - 新增/修改菜单项**只改 `menu.py`**，随 Unload→Load 热重载，**不需重启 SD、不动入口**。新增功能分类在 `menu.py` 用 `_add_category(...)` 加一行即可。
@@ -132,7 +133,7 @@ OutputTools 的「输出脚本」会把功能模块打包成**一个独立 .py**
 - **版本脆弱的 SD/Qt 接口，只走集中式兼容层 [sdcompat.py](MaxSDPlugins/sdcompat.py)。** 功能模块**禁止**再硬编码 `app.getQtForPythonUIMgr()` / `app.getUIMgr()` / `focusGraphNode(...)` 等；改为 `from .. import sdcompat` 后调 `sdcompat.get_current_graph()` / `sdcompat.focus_node()` / `sdcompat.get_main_window()`。`goto_node` 等只做转发。
 - **`sdcompat` 三层保障**：能力探测（`hasattr` + 遍历多候选管理器/方法名）→ 多策略降级（定位不了就选中高亮，再不行给提示）→ 永不抛异常 + 精确日志。**新差异只在 `sdcompat.py` 加候选，一处维护。**
 - **导出物必须「双版本通用」，不做 PySide 静态字符串替换。** 历史上的 `PySide6 -> PySide2` 整体替换会把模块里的 `try PySide6 except PySide2` 回退写死成单版本，**已废弃，禁止再用**。
-- **导出时 `sdcompat.py` 始终被打包**为 `_maxsd_bundle.root_sdcompat`，**最先 exec 并调 `qt_patch()`**（抹平 `QAction` 位置、`exec/exec_`），随后功能模块的 `from .. import sdcompat` 自动改写到它。见 [output_tools.py](MaxSDPlugins/output_tools/output_tools.py) 的 `export_modules`。
+- **独立导出保留真实包结构、相对 import 和资源**：`output_tools/exporter.py` 自动补齐依赖，解压至临时目录，用唯一 `_maxsd_bundle_<uuid>` 命名空间；先 import `sdcompat` 并调用 `qt_patch()`。MG 才用 AST 改写相对 import，不全局替换源代码字符串。宿主结束使用独立产物后调用 `maxsd_shutdown()`。
 - **写兼容前先查本地查找表**：差异清单见 [docs/SD_API_Compatibility.md](docs/SD_API_Compatibility.md) 与 [docs/sd_api_compat.json](docs/sd_api_compat.json)。**优先查这份本地备份**，不要凭记忆猜 SD13 接口名。
 - **新发现一处差异，三处同步**：(1) `sdcompat.py` 加候选/策略；(2) 查找表 md+json；(3) 若 `sdcompat` 无法覆盖的极端情况才在调用处 `hasattr` 守卫。
 
@@ -145,6 +146,25 @@ OutputTools 的「输出脚本」会把功能模块打包成**一个独立 .py**
 | 模态执行 | `dialog.exec()` | `dialog.exec_()` | `sdcompat.qt_patch()` 互为别名 |
 | 枚举作用域 | `Qt.UserRole`（非作用域仍可用） | `Qt.UserRole` | 用非作用域写法，两版通用 |
 | 图视图定位 | `SDUIMgr.getGraphViewIDCount/focusGraphNode` | **不存在** | `sdcompat.focus_node` 多策略探测降级 |
+
+#### MG 已发布工具版本记录（文档与开发版本比对基准）
+
+OutputTools 的“输出到 MG”属于正式发布动作。插件开发版本与 MG 已发布版本必须分开记录，不能用当前 `_version.py` 直接代表线上工具版本。
+
+当前 MG 目录：`%LGPublicMGEnv%/Scriptlibrary/substance/sdesigner/MaxSD/`。
+
+| MG 工具 | MG 文件 | 发布时插件版本（历史记录） | 发布/文件时间 | 当前工具版本 | 状态 |
+|---|---|---:|---|---:|---|
+| 曝光参数 | `output/LG_MaxSD_exposed_parameters_window.py`、`output/LG_MaxSD_output_data.py` | v0.6.8 | 2026-07-02 | v0.21.2 | 开发修改未重新发布 |
+| Publish Checker | `debug/LG_MaxSD_check_dependencies.py` | v0.6.8 | 2026-07-02 | v0.4.9 | 开发修改未重新发布 |
+
+上表 v0.6.8 是历史插件发布版本，不是独立工具版本；发布时工具版本及目标宿主验收记录尚待核实。本次 v0.25.0 仅本地开发整理，未执行 MG 发布。
+
+未列入上表的功能一律视为“开发中/未通过 MG 发布”，不得在对外文档中标记为 MG 已发布。
+
+每次执行正式 MG 发布后必须同步更新本表：工具名、实际生成文件、发布版本、发布日期和状态。版本取发布时 `_version.py` 的 `VERSION`，不得按文件修改时间猜版本。若只导出部分模块，只更新对应工具；未导出的功能保持原记录。飞书文档与对外说明必须优先展示本表中的 MG 已发布功能，再单列“开发中功能”。
+
+工具版本维护规则：修复某工具问题升该工具 patch；新增该工具功能升 minor；破坏该工具兼容性升 major。修改工具代码时，必须同时更新其 `__init__.py` 的 `TOOL_VERSION`、工具 README 和 `ReleaseNote.md` 对应记录；只修改插件入口/菜单/共享兼容层时，不自动升所有工具版本。
 
 ---
 
@@ -188,14 +208,14 @@ def run(app=None):
 
 > 带 UI 的功能改为暴露 `show_window(main_win)`，窗口类参考 [../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart2/mylib/window.py](../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart2/mylib/window.py)。
 
-### 步骤 3：在入口文件注册菜单项
+### 步骤 3：在 menu.py 注册菜单项
 
-编辑 [MaxSDPlugins/MaxSDPlugin.py](MaxSDPlugins/MaxSDPlugin.py)，在创建菜单的辅助函数里追加一个动作（**唯一注册点**）：
+编辑 [MaxSDPlugins/menu.py](MaxSDPlugins/menu.py) 的 `build_menu`，使用已有 `_add_category` / `_add_action` 注册功能；不要为普通菜单变更修改入口。以下仅示意动作必须由菜单持有：
 
 ```python
 from <feature_name> import run as run_<feature>
 
-action = QtWidgets.QAction('<中文功能名>', main_win)
+action = QtWidgets.QAction('<中文功能名>', menu)
 action.triggered.connect(lambda: run_<feature>())
 menu.addAction(action)
 # 记得把 action 存进模块级列表，卸载时统一移除
@@ -222,7 +242,7 @@ menu.addAction(action)
 
 SD 插件没有独立 CLI 构建，验证分两层：
 
-1. **语法编译**：运行工作区任务 `Python Lint Check`（`py_compile`），或对新文件调用 `get_errors`。**任何语法/导入错误必须本轮修复**。
+1. **语法编译**：运行工作区任务 `Python Lint Check`（`utilities/validate_project.py`：内存编译 + 离线回归）。**任何语法/导入错误必须本轮修复**。
    > 注意：`import sd` / `import PySide` 在工作区 lint 里可能找不到（它们只在 SD 内存在），这类"缺失模块"告警可接受；但**语法错误、缩进错误、未定义名**必须修。
 2. **运行验证（说明给用户）**：快速试脚本在 SD `Windows > Python Editor` 面板粘贴运行（Run / `F5`）；插件则放入 SD 插件目录加载（或 `Tools > Plugin Manager...` 管理），确认菜单出现、点击可用、卸载后菜单消失。
    > SD 没有 `Tools > Scripting` 菜单；脚本运行走 **Python Editor**（`Windows` 菜单），插件管理走 **Plugin Manager**（`Tools` 菜单）。
@@ -364,3 +384,11 @@ SD 插件没有独立 CLI 构建，验证分两层：
 | PySide UI 窗口类 | [../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart2/mylib/window.py](../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart2/mylib/window.py) |
 | 环境/版本检查（PySide 是否加载） | [../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart1/CheckPyside.py](../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart1/CheckPyside.py) |
 | 视图布局操作 | [../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart1/ResetViewLayout.py](../01_BilibiliTutorial/Bilibili_HuangJuanLr/SubstanceDesignerPart1/ResetViewLayout.py) |
+## 8. v0.25.0 框架维护约定
+
+- 内部通用逻辑放 `MaxSDPlugins/shared/`；`utilities/validate_project.py` 是开发验收入口，不随插件打包。
+- 窗口公开 `show_window` 保留签名，通过 `shared.lifecycle.show_dialog` 复用和释放。长任务设置 `_running`，执行期间锁定配置；先取消/等待，后卸载。
+- 加载时清理子模块及父包旧模块属性，并重新绑定入口持有的 `sdcompat`；卸载时不删除 `sys.modules`。
+- Adobe API 异常统一用 `sdcompat.SD_API_ERRORS`，不以捕获所有 `BaseException` 代替精确边界。历史工具内异常元组保留为别名。
+- 发布前运行离线回归，并在目标 Designer 验证加载、卸载、各工具操作、撤销/文件备份和资源。CI 配置不等于 CI 已运行成功。
+- 本次不整理外部团队路径；保留根目录处理 SBS 以兼容已有资源链接。

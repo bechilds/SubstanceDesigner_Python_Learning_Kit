@@ -6,9 +6,7 @@
 - 在主窗口菜单栏创建唯一顶级菜单 `MaxSDPlugin`（幂等，不重复添加）。
 - 卸载时把本插件加的菜单 / 动作清理干净，并把模块级引用置 None。
 
-当前只内置一个演示动作「关于 / 版本信息」，用于验证插件已被 SD 正确加载，
-同时对应 ReleaseNote 第 1 项（显示插件版本 / 软件版本 / PySide 版本）。
-后续功能请按 AGENTS.md §2 的流程，在功能子文件夹里实现，再由本文件注册成菜单项。
+功能由 menu.py 注册；窗口由 shared.lifecycle 管理。入口改动须重启宿主。
 """
 
 import sd  # SD 提供的 Python 包；只在 SD 进程内可用
@@ -20,18 +18,18 @@ try:
     from PySide6 import QtWidgets, QtGui
     from PySide6.QtCore import qVersion
     _PYSIDE_NAME = "PySide6"
-except Exception:
+except sdcompat.SD_API_ERRORS:
     try:
         from PySide2 import QtWidgets, QtGui  # 旧版 SD 回退
         from PySide2.QtCore import qVersion
         _PYSIDE_NAME = "PySide2"
-    except Exception as _e:
+    except sdcompat.SD_API_ERRORS as _e:
         QtWidgets = None
         QtGui = None
         qVersion = None
         print(f"[MaxSDPlugin] PySide 导入失败，UI 功能不可用: {_e}")
 
-__version__ = "0.23.0"
+__version__ = "0.25.2"
 
 def _entry_files_mtime():
     """返回入口文件 MaxSDPlugin.py / __init__.py 的最新修改时间（取不到返回 0）。"""
@@ -41,7 +39,7 @@ def _entry_files_mtime():
     for name in ("MaxSDPlugin.py", "__init__.py"):
         try:
             latest = max(latest, os.path.getmtime(os.path.join(here, name)))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
     return latest
 
@@ -57,7 +55,7 @@ def _get_version():
         pkg = __package__ or "MaxSDPlugins"
         mod = importlib.import_module(pkg + "._version")
         return getattr(mod, "VERSION", __version__)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return __version__
 
 
@@ -81,7 +79,7 @@ def _show_about(main_win=None):
             if hasattr(app, getter):
                 sd_version = getattr(app, getter)()
                 break
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"[MaxSDPlugin] 读取 SD 版本失败: {e}")
 
     qt_ver = qVersion() if qVersion else "未知"
@@ -112,10 +110,7 @@ def _create_menu(main_win):
         print("[MaxSDPlugin] 未找到菜单栏")
         return
 
-    # 幂等关键：按文字移除所有旧的 MaxSDPlugin 菜单（含历史重复 / 重载残留），再新建一个干净的
-    for act in list(menu_bar.actions()):
-        if act.text() == "MaxSDPlugin":
-            menu_bar.removeAction(act)
+    _remove_menu(main_win)
     _menu_ref = menu_bar.addMenu("MaxSDPlugin")
     _keep_alive = []
 
@@ -140,12 +135,22 @@ def _remove_menu(main_win):
     """卸载时按文字移除本插件创建的 MaxSDPlugin 菜单，并清空保活引用。"""
     global _menu_ref, _keep_alive
     try:
+        for obj in _keep_alive:
+            try:
+                if hasattr(obj, 'triggered'):
+                    obj.triggered.disconnect()
+                obj.deleteLater()
+            except (RuntimeError, TypeError):
+                pass  # 已被 Qt 销毁或没有连接的信号。
         if main_win:
             menu_bar = main_win.menuBar()
             if menu_bar:
                 for act in list(menu_bar.actions()):
                     if act.text() == "MaxSDPlugin":
                         menu_bar.removeAction(act)
+                        old_menu = act.menu()
+                        if old_menu is not None:
+                            old_menu.deleteLater()
     except Exception as e:
         print(f"[MaxSDPlugin] 菜单清理失败: {e}")
     finally:
@@ -167,17 +172,26 @@ def _reload_feature_modules():
       因为 SD 攥着它们的旧模块对象，不会重新 import。
     """
     import sys
+    import importlib
+    global sdcompat
     pkg = __package__ or "MaxSDPlugins"
     # 永不清理：包根 + 入口模块（清了会破坏相对导入与 SD 持有的入口引用）
     keep = {pkg, pkg + ".MaxSDPlugin", pkg + ".__init__"}
-    for name in list(sys.modules):
+    for name in sorted(list(sys.modules), key=lambda item: item.count('.'), reverse=True):
         if name in keep:
             continue
         if name == pkg or name.startswith(pkg + "."):
             try:
-                del sys.modules[name]
-            except Exception:
+                module = sys.modules.pop(name)
+                parent_name, _, attr = name.rpartition('.')
+                parent = sys.modules.get(parent_name)
+                if parent is not None and getattr(parent, attr, None) is module:
+                    delattr(parent, attr)
+            except sdcompat.SD_API_ERRORS:
                 pass
+    importlib.invalidate_caches()
+    sdcompat = importlib.import_module(pkg + '.sdcompat')
+    sdcompat.qt_patch()
 
 
 def _reload_plugin(main_win=None):
@@ -196,8 +210,9 @@ def _reload_plugin(main_win=None):
             "请确认插件已正确加载，或在 Plugin Manager 中手动 Unload→Load。")
         return
     try:
-        uninitializeSDPlugin()
-        initializeSDPlugin()
+        if uninitializeSDPlugin() is False or initializeSDPlugin() is False:
+            QtWidgets.QMessageBox.warning(win, "MaxSDPlugin", "请先取消或等待正在运行的任务完成，再重载。")
+            return
         entry_changed = _entry_files_mtime() > _ENTRY_MTIME_AT_LOAD
         msg = f"已重载功能模块并重建菜单（v{_get_version()}）。"
         if entry_changed:
@@ -215,17 +230,27 @@ def initializeSDPlugin():
     if QtWidgets is None:
         print("[MaxSDPlugin] 未检测到 PySide，跳过 UI 注册。")
         return
-    # 先清功能子模块缓存，使本次 Load 能读到 output/ 下的最新代码（无需重启）
+    # 重复 Load 也先关闭旧窗口；不能清掉正在执行任务的模块。
+    import sys
+    lifecycle = sys.modules.get((__package__ or 'MaxSDPlugins') + '.shared.lifecycle')
+    if lifecycle is not None and not lifecycle.close_all_dialogs():
+        return False
     _reload_feature_modules()
     main_win = _get_main_window()
     if not main_win:
         print("[MaxSDPlugin] 主窗口不可用（可能为命令行模式），跳过 UI 注册。")
         return
     _create_menu(main_win)
+    return True
 
 
 def uninitializeSDPlugin():
     """SD 卸载插件 / 关闭软件时自动调用。"""
     print("[MaxSDPlugin] Plugin unloaded")
+    import sys
+    lifecycle = sys.modules.get((__package__ or 'MaxSDPlugins') + '.shared.lifecycle')
+    if lifecycle is not None and not lifecycle.close_all_dialogs():
+        return False
     if QtWidgets is not None:
         _remove_menu(_get_main_window())
+    return True

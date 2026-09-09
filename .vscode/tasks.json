@@ -6,9 +6,7 @@
 			"type": "shell",
 			"command": "python",
 			"args": [
-				"-m",
-				"py_compile",
-				"tutorials/01_introduction.py"
+				"02_MySDPlugins/utilities/validate_project.py"
 			],
 			"group": "build",
 			"isBackground": false,

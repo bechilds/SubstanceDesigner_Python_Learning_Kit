@@ -6,6 +6,8 @@
 由 MaxSDPlugin.py 注册到 `MaxSDPlugin/Debug` 子菜单。
 """
 
+TOOL_VERSION = "0.4.9"
+
 from .check_dependencies import show_window
 
 __all__ = ["show_window"]

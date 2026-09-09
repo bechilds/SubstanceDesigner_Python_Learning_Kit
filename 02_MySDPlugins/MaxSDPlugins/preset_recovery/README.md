@@ -1,11 +1,31 @@
 # 预设效果找回 (preset_recovery)
 
+> 当前开发工具版本：v0.20.2（`__init__.py/TOOL_VERSION`）；随插件 v0.25.2 升级。此版本号不代表 MG 已发布版本。
+
 导入旧 `.sbsprs`，按旧参数名与当前 Graph 的 Identifier 重新建立映射，并在 `INPUT PARAMETERS > Presets` 中创建或覆盖预设。
 菜单位置：`MaxSDPlugin/Output/预设效果找回`。
 
 ---
 
 ## 功能概览
+
+### 使用流程
+
+<whiteboard type="mermaid">
+flowchart TD
+    A[打开当前 Graph 并准备旧 sbsprs] --> B[读取预设并按 Identifier 匹配]
+    B --> C[核对自动映射 手动目标与 Preset 名称]
+    C --> D{输入与目标确认无误?}
+    D -- 否 --> B
+    D -- 是 --> E[校验值 确认新建或覆盖 Preset]
+    E --> G{创建及参数写入成功?}
+    G -- 是 --> F[保存当前 SBS 原 sbsprs 保持不变]
+    G -- 否 --> H[清理半成品 覆盖时恢复旧标签和输入]
+    H --> I{恢复成功?}
+    I -- 是 --> J[报告原始错误 不保存]
+    I -- 否 --> K[同时报告写入与恢复错误 检查撤销后再保存]
+</whiteboard>
+
 - 读取一个预设文件中的一个或多个预设，并列出其中的参数名称、类型和值。
 - 优先按当前参数 Identifier 精确匹配；找不到时标红提示，并允许手动选择目标参数。
 - 目标名称不存在时调用 Graph Preset API 新建；存在时明确询问，再删除并重建同名 Preset。
@@ -57,4 +77,18 @@ preset_recovery/
 - 工具只处理 `.sbsprs` 中带参数名称和值属性的 `presetinput`；未映射项不会写入目标 Preset。
 - 自动匹配只依据 Identifier，不根据 Label 猜测；多个旧参数不能映射到同一个目标 Identifier。
 - 当前支持 float/int/bool/string 及 2-4 维 float/int 值，并支持 Toggle、Dropdown/Enum、Color、Position、Angle/Slider Editor 转换；图像、字体等资源类型会在执行前提示且不修改 Graph。
-- 覆盖同名 Preset 会完整替换其输入集合；执行前必须确认，失败时会尽量恢复旧 Preset。
+- 覆盖同名 Preset 会完整替换其输入集合；执行前必须确认，创建或写入失败时会清理半成品并尽量恢复旧 Preset 的标签和输入；恢复也失败时同时报告两次错误，请检查并尝试撤销，确认恢复前不要保存 SBS。
+
+## 框架升级说明
+
+本工具公开入口和原有参数保持不变。窗口统一由 `shared.lifecycle` 管理：重复打开复用、关闭释放；插件重载会关闭窗口。未保存的界面配置请先处理。升级包含入口变更，需要重启 Designer 一次。离线回归不替代目标 Designer 中的实际功能和撤销验证。
+
+## 本次修复验证与安装
+
+目标 Designer 16.0.1，兼容目标 SD13；未新增依赖或外部资源。更新插件文件后 Unload→Load 生效；入口回退版本需重启。离线回归已覆盖本次失败场景；仍需在 Designer 验证加载/卸载、对应工具操作及撤销或文件副本，尚未执行实机验收或 MG 发布。
+
+## 更新日志
+
+- 2026-09-09 · v0.20.2 · 创建新 Preset 失败时也恢复旧预设，恢复失败保留两次错误 · 本工具数据安全边界 · 功能可 Unload→Load，入口回退版本需重启
+
+- 2026-09-04 · v0.20.1 · 接入统一窗口生命周期 · 本工具入口与错误处理 · 随插件 v0.25.0 升级需重启 SD

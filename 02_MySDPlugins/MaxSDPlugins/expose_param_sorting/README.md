@@ -1,11 +1,26 @@
 # 曝光参数自动排序 (ExposeParameterAutoSorting)
 
+> 当前开发工具版本：v0.23.1（`__init__.py/TOOL_VERSION`）；随插件 v0.25.0 升级。此版本号不代表 MG 已发布版本。
+
 按分组调整当前活动 Graph 的 INPUT PARAMETERS 顺序，并通过安全重排 SBS XML 保存结果。
 入口位置：`MaxSDPlugin/Output/曝光参数/参数分组排序` 按钮。
 
 ---
 
 ## 功能概览
+
+### 使用流程
+
+<whiteboard type="mermaid">
+flowchart TD
+    A[打开目标 Graph] --> B[读取 INPUT PARAMETERS 分组与顺序]
+    B --> C[调整顺序或分组 核对 SBS 路径与 Graph]
+    C --> D{输入与目标确认无误?}
+    D -- 否 --> B
+    D -- 是 --> E[确认后保存备份并重排 XML]
+    E --> F[重新加载 Package 核对排序与参数]
+</whiteboard>
+
 - 只扫描 `isConnectable() == False` 的 INPUT PARAMETERS，并按 Group 树状展示。
 - 支持拖拽顶级分组调整组顺序，以及拖拽参数调整组内顺序或移入其他组。
 - 支持按钮和 `Ctrl+↑` / `Ctrl+↓` 快速移动选中的分组或组内参数，并可通过“更改分组…”把参数移到已有组。
@@ -51,3 +66,11 @@
 - 排序会卸载并重新加载当前 Package，完成后需要在 Explorer 中重新打开原 Graph。
 - XML 排序不支持 Ctrl+Z；操作前会自动创建备份。
 - 运行时可见但未序列化到 `<paraminputs>` 的继承或动态参数会安全跳过。
+
+## 框架升级说明
+
+本工具公开入口和原有参数保持不变。窗口统一由 `shared.lifecycle` 管理：重复打开复用、关闭释放；插件重载会关闭窗口。未保存的界面配置请先处理。升级包含入口变更，需要重启 Designer 一次。离线回归不替代目标 Designer 中的实际功能和撤销验证。
+
+## 更新日志
+
+- 2026-09-04 · v0.23.1 · 接入统一窗口生命周期 · 本工具入口与错误处理 · 随插件 v0.25.0 升级需重启 SD

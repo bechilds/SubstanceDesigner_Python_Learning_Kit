@@ -14,28 +14,25 @@ try:
     from sd.api.sdbasetypes import float2
     from sd.api.sdgraphobjectcomment import SDGraphObjectComment
     from sd.api.sdproperty import SDPropertyCategory
-except Exception:  # pragma: no cover - 仅普通 Python 环境
+except sdcompat.SD_API_ERRORS:  # pragma: no cover - 仅普通 Python 环境
     float2 = None
     SDGraphObjectComment = None
     SDPropertyCategory = None
 
-try:
-    from sd.api.apiexception import APIException
-    _SD_ERRORS = (Exception, APIException)
-except Exception:  # pragma: no cover - 仅普通 Python 环境
-    _SD_ERRORS = (Exception,)
+APIException = sdcompat.APIException
+_SD_ERRORS = sdcompat.SD_API_ERRORS
 
 
 def _as_list(value):
     """把 SDArray 等可索引对象安全转换为 Python list。"""
     try:
         return list(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         result = []
         try:
             for index in range(len(value)):
                 result.append(value[index])
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
         return result
 
@@ -50,12 +47,12 @@ def _value_to_text(value):
             text = str(getter())
             if text:
                 return text
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     try:
         from sd.api.sdvalueserializer import SDValueSerializer
         text = SDValueSerializer.sToString(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         text = str(value)
     if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
         return text[1:-1]
@@ -69,7 +66,7 @@ def _is_get_node(node):
         definition_id = str(definition.getId() or "") if definition else ""
         label = str(definition.getLabel() or "") if definition else ""
         return "get" in definition_id.lower() or label.lower().startswith("get")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
 
 
@@ -78,7 +75,7 @@ def _function_references(function_graph):
     references = []
     try:
         function_nodes = _as_list(function_graph.getNodes())
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         return references, [f"读取函数节点失败: {error}"]
     diagnostics = []
     for function_node in function_nodes:
@@ -86,7 +83,7 @@ def _function_references(function_graph):
             definition = function_node.getDefinition()
             definition_id = str(definition.getId() or "") if definition else ""
             definition_label = str(definition.getLabel() or "") if definition else ""
-        except Exception as error:
+        except sdcompat.SD_API_ERRORS as error:
             diagnostics.append(f"读取函数节点定义失败: {error}")
             continue
         if not _is_get_node(function_node):
@@ -104,7 +101,7 @@ def _function_references(function_graph):
             else:
                 diagnostics.append(
                     f"Get Variable {definition_id or definition_label or '<未知定义>'} 的 __constant__ 为空")
-        except Exception as error:
+        except sdcompat.SD_API_ERRORS as error:
             diagnostics.append(
                 f"读取 Get Variable {definition_id or definition_label or '<未知定义>'} 失败: {error}")
     return references, diagnostics
@@ -137,7 +134,7 @@ def _graph_parameters(graph):
     names = {}
     try:
         properties = _as_list(graph.getProperties(SDPropertyCategory.Input))
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         return names, [f"读取 Graph Input Properties 失败: {error}"]
     diagnostics = []
     for prop in properties:
@@ -150,7 +147,7 @@ def _graph_parameters(graph):
                 "label": str(prop.getLabel() or parameter_id),
                 "group": _parameter_group(graph, prop),
             }
-        except Exception as error:
+        except sdcompat.SD_API_ERRORS as error:
             diagnostics.append(f"读取一个 Graph Input Property 失败: {error}")
     return names, diagnostics
 
@@ -172,19 +169,19 @@ def collect_node_exposed_parameters(graph):
     result = []
     try:
         nodes = _as_list(graph.getNodes())
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         print(f"{_LOG} 读取节点失败: {error}")
         return result
     for node in nodes:
         referenced_ids = set()
         try:
             properties = _as_list(node.getProperties(SDPropertyCategory.Input))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         for prop in properties:
             try:
                 function_graph = node.getPropertyGraph(prop)
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 function_graph = None
             if function_graph is not None:
                 referenced_ids.update(_referenced_parameter_ids(function_graph))
@@ -204,7 +201,7 @@ def collect_package_graphs(current_graph):
     try:
         package = current_graph.getPackage()
         resources = _as_list(package.getChildrenResources(True)) if package else []
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         print(f"{_LOG} 读取当前文件资源失败，仅处理当前 Graph: {error}")
         return graphs
     for resource in resources:
@@ -213,7 +210,7 @@ def collect_package_graphs(current_graph):
         try:
             if resource.getUrl() == current_graph.getUrl():
                 continue
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             if resource is current_graph:
                 continue
         graphs.append(resource)
@@ -226,7 +223,7 @@ def _graph_name(graph):
             value = getattr(graph, getter_name)()
             if value:
                 return str(value)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
     return "<未知 Graph>"
 
@@ -235,11 +232,11 @@ def _node_name(node):
     try:
         definition = node.getDefinition()
         label = str(definition.getLabel() or definition.getId() or "") if definition else ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         label = ""
     try:
         node_id = str(node.getIdentifier() or "")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         node_id = ""
     return node_id, label or node_id or "<未知节点>"
 
@@ -249,7 +246,7 @@ def _is_comment(graph_object):
         if SDGraphObjectComment is not None and isinstance(graph_object, SDGraphObjectComment):
             return True
         return "GraphObjectComment" in str(graph_object.getClassName() or "")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
 
 
@@ -257,7 +254,7 @@ def _find_node_comment(graph, node):
     """查找绑定到指定节点的已有 Comment。"""
     try:
         graph_objects = _as_list(graph.getGraphObjects())
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return None
     for graph_object in graph_objects:
         if not _is_comment(graph_object):
@@ -268,7 +265,7 @@ def _find_node_comment(graph, node):
                 return graph_object
             if parent and parent.getIdentifier() == node.getIdentifier():
                 return graph_object
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
     return None
 
@@ -308,7 +305,7 @@ def scan_package(current_graph):
             f"[{graph_name}] {message}" for message in graph_diagnostics)
         try:
             nodes = _as_list(graph.getNodes())
-        except Exception as error:
+        except sdcompat.SD_API_ERRORS as error:
             result["diagnostics"].append(f"[{graph_name}] 读取节点失败: {error}")
             continue
         stats["nodes"] += len(nodes)
@@ -320,7 +317,7 @@ def scan_package(current_graph):
             raw_get_nodes = []
             try:
                 properties = _as_list(node.getProperties(SDPropertyCategory.Input))
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 result["diagnostics"].append(
                     f"[{graph_name}/{node_label}] 读取 Input Properties 失败: {error}")
                 continue
@@ -330,7 +327,7 @@ def scan_package(current_graph):
                     property_id = str(prop.getId() or "")
                     property_label = str(prop.getLabel() or property_id)
                     function_graph = node.getPropertyGraph(prop)
-                except Exception as error:
+                except sdcompat.SD_API_ERRORS as error:
                     result["diagnostics"].append(
                         f"[{graph_name}/{node_label}] 读取节点属性函数失败: {error}")
                     continue
@@ -361,14 +358,14 @@ def scan_package(current_graph):
             comment = _find_node_comment(graph, node)
             try:
                 existing_text = str(comment.getDescription() or "") if comment else ""
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 existing_text = ""
                 result["diagnostics"].append(
                     f"[{graph_name}/{node_label}] 读取已有 Comment 失败: {error}")
             try:
                 position = node.getPosition()
                 target_position = (float(position.x), float(position.y) + _COMMENT_OFFSET_Y)
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 target_position = None
                 result["diagnostics"].append(
                     f"[{graph_name}/{node_label}] 读取节点位置失败: {error}")
@@ -413,7 +410,7 @@ def apply_comment_plans(plans, append_existing=True):
     try:
         from sd.api.sdhistoryutils import SDHistoryUtils
         history = SDHistoryUtils.UndoGroup("自动添加曝光参数描述")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     try:
         if history is not None:
@@ -433,7 +430,7 @@ def apply_comment_plans(plans, append_existing=True):
                     result["updated"] += 1
                 comment.setDescription(text)
                 _set_comment_position(comment, node)
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 result["failures"].append(f"{plan.get('node_id') or '<未知节点>'}: {error}")
     finally:
         if history is not None:
@@ -748,14 +745,14 @@ if QtWidgets is not None:
 
 
 def show_window(main_win=None):
-    """菜单入口：显示覆盖/追加选择窗口。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
     try:
-        _dialog_ref = AutoAddExposeCommentDialog(main_win or sdcompat.get_main_window())
-        _dialog_ref.show()
-    except Exception as error:
-        print(f"{_LOG} 打开窗口失败: {error}")
-        QtWidgets.QMessageBox.critical(main_win, "AutoAddExposeCommentToNode", str(error))
+        return show_dialog(__name__, lambda: AutoAddExposeCommentDialog(main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

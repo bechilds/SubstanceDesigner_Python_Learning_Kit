@@ -33,7 +33,9 @@ if QtWidgets is not None:
             self._keyword_edits = {}
             self._channel_buttons = {}
             self._channel_button_groups = []
+            self._config_buttons = []
             self._cancel_requested = False
+            self._running = False
             self._build_ui()
             self._inspect_processor()
 
@@ -139,6 +141,7 @@ if QtWidgets is not None:
             self._run_button = QtWidgets.QPushButton("开始批处理", self)
             self._cancel_button = QtWidgets.QPushButton("取消", self)
             close_button = QtWidgets.QPushButton("关闭", self)
+            self._config_buttons.extend([inspect_button, select_all_button, select_none_button])
             self._run_button.setEnabled(False)
             self._scan_button.setEnabled(False)
             self._cancel_button.setEnabled(False)
@@ -164,12 +167,15 @@ if QtWidgets is not None:
             row = QtWidgets.QHBoxLayout(container)
             row.setContentsMargins(0, 0, 0, 0)
             browse = QtWidgets.QPushButton("浏览...", self)
+            self._config_buttons.append(browse)
             browse.clicked.connect(callback)
             row.addWidget(line_edit, 1)
             row.addWidget(browse)
             return container
 
         def _browse_source(self):
+            if self._running:
+                return
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择输入贴图文件夹")
             if path:
                 self._source_edit.setText(path)
@@ -177,11 +183,15 @@ if QtWidgets is not None:
                     self._output_edit.setText(os.path.join(path, "Merged"))
 
         def _browse_output(self):
+            if self._running:
+                return
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择输出文件夹")
             if path:
                 self._output_edit.setText(path)
 
         def _browse_sbs(self):
+            if self._running:
+                return
             path, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
                 self, "选择 BatchMergeTexChannel.sbs", self._sbs_edit.text(), "Substance (*.sbs)")
             if path:
@@ -205,16 +215,20 @@ if QtWidgets is not None:
                 self._run_button.setEnabled(False)
 
         def _mark_processor_unchecked(self):
+            if self._running:
+                return
             logic.cleanup_processor(self._processor)
             self._processor = None
             self._set_tool_status(False, "处理 SBS 路径已变化，请点击“检查 SBS 接口”。")
 
         def _inspect_processor(self):
+            if self._running:
+                return
             logic.cleanup_processor(self._processor)
             self._processor = None
             try:
                 self._processor = logic.load_processor(sbs_path=self._sbs_edit.text().strip())
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 self._set_tool_status(False, str(error))
                 return
             if self._processor["errors"]:
@@ -238,12 +252,14 @@ if QtWidgets is not None:
             template = self._name_template.text().strip() or "{group}_Merged"
             try:
                 name = template.format(group=group["group"])
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 name = f"{group['group']}_Merged"
             extension = self._format_combo.currentText()
             return os.path.join(self._output_edit.text().strip(), f"{_safe_filename(name)}.{extension}")
 
         def _scan(self):
+            if self._running:
+                return
             if self._processor is None or self._processor.get("errors"):
                 QtWidgets.QMessageBox.warning(self, self.windowTitle(), "工具功能异常，处理 SBS 接口未通过检查。")
                 return
@@ -312,9 +328,12 @@ if QtWidgets is not None:
                         check_item.setCheckState(QtCore.Qt.Checked)
                         valid_count += 1
             self._run_button.setEnabled(
-                valid_count > 0 and self._processor is not None and not self._processor.get("errors"))
+                not self._running and valid_count > 0 and self._processor is not None
+                and not self._processor.get("errors"))
 
         def _set_all_checked(self, checked):
+            if self._running:
+                return
             state = QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked
             for row in range(self._table.rowCount()):
                 item = self._table.item(row, 0)
@@ -330,6 +349,8 @@ if QtWidgets is not None:
             return selected
 
         def _run_batch(self):
+            if self._running:
+                return
             groups = self._selected_groups()
             if not groups:
                 QtWidgets.QMessageBox.information(self, self.windowTitle(), "没有勾选可处理的文件组。")
@@ -347,23 +368,38 @@ if QtWidgets is not None:
             succeeded = 0
             failed = []
             channel_assignments = self._channel_assignments()
-            for index, group in enumerate(groups, 1):
-                QtWidgets.QApplication.processEvents()
-                if self._cancel_requested:
-                    self._append_log("用户取消，停止后续任务。")
-                    break
-                output_path = self._output_path(group)
-                try:
-                    logic.process_group(
-                        self._processor, group, channel_assignments, output_path)
-                    succeeded += 1
-                    self._append_log(f"成功 [{group['group']}] -> {output_path}")
-                except Exception as error:
-                    failed.append((group["group"], str(error)))
-                    self._append_log(f"失败 [{group['group']}]：{error}")
-                self._progress.setValue(index)
-            self._cancel_button.setEnabled(False)
-            self._refresh_group_statuses()
+            plan = [(group, self._output_path(group)) for group in groups]
+            overwrite = self._overwrite_check.isChecked()
+            controls = [self._source_edit, self._output_edit, self._sbs_edit,
+                        self._name_template, self._format_combo, self._recursive_check,
+                        self._overwrite_check, self._channel_group, self._table,
+                        self._scan_button] + list(self._keyword_edits.values()) + self._config_buttons
+            states = [(control, control.isEnabled()) for control in controls]
+            self._running = True
+            try:
+                for control, _enabled in states:
+                    control.setEnabled(False)
+                for index, (group, output_path) in enumerate(plan, 1):
+                    QtWidgets.QApplication.processEvents()
+                    if self._cancel_requested:
+                        self._append_log("用户取消，停止后续任务。")
+                        break
+                    try:
+                        if os.path.exists(output_path) and not overwrite:
+                            raise FileExistsError(f"输出已存在，未启用覆盖: {output_path}")
+                        logic.process_group(self._processor, group, channel_assignments, output_path)
+                        succeeded += 1
+                        self._append_log(f"成功 [{group['group']}] -> {output_path}")
+                    except sdcompat.SD_API_ERRORS as error:
+                        failed.append((group["group"], sdcompat.error_text(error)))
+                        self._append_log(f"失败 [{group['group']}]：{sdcompat.error_text(error)}")
+                    self._progress.setValue(index)
+            finally:
+                self._running = False
+                for control, enabled in states:
+                    control.setEnabled(enabled)
+                self._cancel_button.setEnabled(False)
+                self._refresh_group_statuses()
             message = f"处理完成：成功 {succeeded}，失败 {len(failed)}。"
             if self._cancel_requested:
                 message += "\n任务已取消。"
@@ -381,22 +417,33 @@ if QtWidgets is not None:
             print(f"{_LOG} {message}")
 
         def closeEvent(self, event):
+            if self._running:
+                self._request_cancel()
+                event.ignore()
+                return
             logic.cleanup_processor(self._processor)
             self._processor = None
             super().closeEvent(event)
 
+        def reject(self):
+            # Esc 会调用 reject，而不保证经过可忽略的 closeEvent。
+            if self._running:
+                self._request_cancel()
+                return
+            logic.cleanup_processor(self._processor)
+            self._processor = None
+            super().reject()
+
 
 def show_window(main_win=None):
-    """菜单入口。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
     try:
-        _dialog_ref = BatchMergeTexChannelDialog(main_win or sdcompat.get_main_window())
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-    except Exception as error:
-        print(f"{_LOG} 打开窗口失败: {error}")
-        QtWidgets.QMessageBox.critical(main_win, "BatchMergeTexChannel", str(error))
+        return show_dialog(__name__, lambda: BatchMergeTexChannelDialog(main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

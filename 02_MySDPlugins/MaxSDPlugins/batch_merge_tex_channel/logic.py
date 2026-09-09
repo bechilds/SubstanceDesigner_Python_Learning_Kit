@@ -53,7 +53,7 @@ try:
     from sd.api.sdtexture import SDTexture
     from sd.api.sdvaluebool import SDValueBool
     from sd.api.sdvaluetexture import SDValueTexture
-except Exception:  # pragma: no cover - 仅普通 Python 环境
+except sdcompat.SD_API_ERRORS:  # pragma: no cover - 仅普通 Python 环境
     SDPropertyCategory = None
     SDTexture = None
     SDValueBool = None
@@ -63,12 +63,12 @@ except Exception:  # pragma: no cover - 仅普通 Python 环境
 def _as_list(value):
     try:
         return list(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         result = []
         try:
             for index in range(len(value)):
                 result.append(value[index])
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
         return result
 
@@ -176,13 +176,13 @@ def default_sbs_path():
 def _find_graph(package):
     try:
         resources = _as_list(package.getChildrenResources(True))
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         resources = []
     for resource in resources:
         try:
             if resource.getIdentifier() == GRAPH_ID and hasattr(resource, "compute"):
                 return resource
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
     return None
 
@@ -202,7 +202,7 @@ def load_processor(app=None, sbs_path=None):
     try:
         shutil.copy2(sbs_path, temp_sbs_path)
         package = package_mgr.loadUserPackage(temp_sbs_path, True, False)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         shutil.rmtree(temp_folder, ignore_errors=True)
         raise
     graph = _find_graph(package)
@@ -223,13 +223,13 @@ def load_processor(app=None, sbs_path=None):
             prop = graph.getPropertyFromId(property_id, SDPropertyCategory.Input)
             if prop is not None:
                 input_ids.add(property_id)
-        except Exception as error:
+        except sdcompat.SD_API_ERRORS as error:
             lookup_errors.append(f"读取输入 {property_id} 失败: {error}")
     try:
         output_property = graph.getPropertyFromId(OUTPUT_ID, SDPropertyCategory.Output)
         if output_property is not None:
             output_ids.add(OUTPUT_ID)
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         lookup_errors.append(f"读取输出 {OUTPUT_ID} 失败: {error}")
     resolved_switches = {}
     missing_switches = []
@@ -268,11 +268,11 @@ def cleanup_processor(context):
         return
     try:
         context["package_mgr"].unloadUserPackage(context["package"])
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         print(f"{_LOG} 卸载处理 Package 失败: {error}")
     try:
         shutil.rmtree(context.get("temp_folder", ""), ignore_errors=True)
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         print(f"{_LOG} 删除临时处理目录失败: {error}")
 
 

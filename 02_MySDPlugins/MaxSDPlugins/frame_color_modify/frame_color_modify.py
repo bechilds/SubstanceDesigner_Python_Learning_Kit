@@ -13,7 +13,7 @@ _dialog_ref = None
 try:
     from sd.api.sdgraphobjectframe import SDGraphObjectFrame
     from sd.api.sdbasetypes import ColorRGBA
-except Exception:  # pragma: no cover - 仅普通 Python 环境
+except sdcompat.SD_API_ERRORS:  # pragma: no cover - 仅普通 Python 环境
     SDGraphObjectFrame = None
     ColorRGBA = None
 
@@ -21,12 +21,12 @@ except Exception:  # pragma: no cover - 仅普通 Python 环境
 def _as_list(value):
     try:
         return list(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         result = []
         try:
             for index in range(len(value)):
                 result.append(value[index])
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
         return result
 
@@ -37,7 +37,7 @@ def collect_frames(graph):
         return []
     try:
         graph_objects = _as_list(graph.getGraphObjects())
-    except Exception as error:
+    except sdcompat.SD_API_ERRORS as error:
         print(f"{_LOG} 读取 Graph Objects 失败: {error}")
         return []
     frames = []
@@ -49,7 +49,7 @@ def collect_frames(graph):
             class_name = str(graph_object.getClassName() or "")
             if "GraphObjectFrame" in class_name:
                 frames.append(graph_object)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
     return frames
 
@@ -60,12 +60,12 @@ def frame_info(frame):
     rgba = (0.0, 0.0, 0.0, 1.0)
     try:
         title = str(frame.getTitle() or title)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     try:
         color = frame.getColor()
         rgba = (float(color.r), float(color.g), float(color.b), float(color.a))
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return title, rgba
 
@@ -79,16 +79,16 @@ def frame_details(frame):
     try:
         value = frame.getPosition()
         position = (float(value.x), float(value.y))
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     try:
         value = frame.getSize()
         size = (float(value.x), float(value.y))
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     try:
         description = str(frame.getDescription() or "")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return {
         "title": title,
@@ -109,7 +109,7 @@ def apply_frame_color(frames, red, green, blue, alpha, modify_color=True):
     try:
         from sd.api.sdhistoryutils import SDHistoryUtils
         history = SDHistoryUtils.UndoGroup("FrameColorModify 批量修改 Frame")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         history = None
     try:
         if history is not None:
@@ -127,7 +127,7 @@ def apply_frame_color(frames, red, green, blue, alpha, modify_color=True):
                 color.a = float(alpha)
                 frame.setColor(color)
                 changed += 1
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 failures.append(f"{frame_info(frame)[0]}: {error}")
     finally:
         if history is not None:
@@ -250,15 +250,14 @@ if QtWidgets is not None:
 
 
 def show_window(main_win=None):
-    """菜单入口。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
     try:
-        _dialog_ref = FrameColorModifyDialog(main_win or sdcompat.get_main_window())
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-    except Exception as error:
-        print(f"{_LOG} 打开窗口失败: {error}")
+        return show_dialog(__name__, lambda: FrameColorModifyDialog(main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

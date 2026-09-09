@@ -179,3 +179,7 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Designer local autosaves and plugin runtime cache (keep on disk).
+/02_MySDPlugins/MaxSDPlugins/.autosave/
+/02_MySDPlugins/MaxSDPlugins/OutputData.json

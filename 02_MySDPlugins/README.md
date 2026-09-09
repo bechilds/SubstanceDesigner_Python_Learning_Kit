@@ -10,7 +10,11 @@
 ├── AGENTS.md            # AI 协作者指南（开发本插件前必读）
 ├── MaxSDPlugins/        # 插件开发主目录
 │   ├── __init__.py      # 插件包入口（转发 initialize/uninitialize）
-│   ├── MaxSDPlugin.py   # 插件入口逻辑：MaxSDPlugin 菜单 + 版本信息 + Output / Debug 分类
+│   ├── MaxSDPlugin.py   # 插件入口、重载及菜单生命周期
+│   ├── menu.py          # 数据驱动菜单
+│   ├── _version.py      # 插件总版本
+│   ├── sdcompat.py      # SD/Qt 兼容与专用异常边界
+│   ├── shared/          # 插件内部共享层：lifecycle.py 管理窗口
 │   ├── output/          # Output 功能分类（曝光参数等）
 │   │   ├── __init__.py
 │   │   ├── exposed_parameters_window.py  # 曝光参数对话框 UI
@@ -55,7 +59,8 @@
 │   │   └── README.md
 │   ├── output_tools/    # 独立脚本打包与自定义目录 MG MaxSD 输出
 │   │   ├── __init__.py
-│   │   ├── output_tools.py
+│   │   ├── output_tools.py     # 扫描与窗口
+│   │   ├── exporter.py         # 依赖解析与导出
 │   │   └── README.md
 │   ├── sbs_file_reporter/ # Analysis 功能分类（SBS 静态复杂度审计）
 │   │   ├── __init__.py
@@ -63,6 +68,7 @@
 │   │   ├── reporter_window.py             # 报告、定位与发布 UI
 │   │   └── README.md
 │   └── ReleaseNote.md      # 插件功能计划清单
+├── tests/               # 离线框架回归测试（不替代 SD 实机测试）
 ├── utilities/           # 自己积累的工具脚本（可复用函数）
 └── docs/                # 基础概念备注 / 官方文档摘录 / 开发日志
     ├── 官方文档          # 官方文档相关记录
@@ -78,7 +84,7 @@
 MaxSDPlugin
 ├─ 关于 / 版本信息
 ├─ Output
-│  ├─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（删除重置为 TODO）
+│  ├─ 曝光参数        # 枚举已暴露参数 / 勾选 / 缓存·导出·加载 OutputData（取消曝光/值还原已实现）
 │  │                    # 内含参数分组排序、空参数标记和画布损坏节点检查
 │  ├─ 预设效果找回    # 按 Identifier 在当前 Graph 中新建或覆盖 Preset
 │  └─ BatchMergeTexChannel # 按关键字分组并批量合并贴图通道
@@ -119,7 +125,7 @@ MaxSDPlugin
 ### 方式二：让 SD 直接加载本插件（推荐，调试更快）
 
 把本目录加入 SD 的「插件搜索路径」，SD 启动时就会发现 `MaxSDPlugins` 包并自动调用 `initializeSDPlugin()`，
-之后改完代码用 Plugin Manager 重载即可，**无需重启 SD**。
+功能模块修改可通过 Plugin Manager 重载；入口文件修改必须重启 SD。本次 v0.25.0 修改入口，升级后需重启一次。
 
 **第一步：添加搜索路径（任选其一）**
 
@@ -131,11 +137,11 @@ MaxSDPlugin
 
 **第二步：验证已加载**
 
-启动 SD 后，菜单栏应出现顶级菜单 **`MaxSDPlugin`**；点 `关于 / 版本信息` 会在 Python 控制台打印插件 / SD / PySide 版本。
+启动 SD 后，菜单栏应出现顶级菜单 **`MaxSDPlugin`**；点 `关于 / 版本信息` 会弹窗显示插件 / SD / PySide 版本。
 
 **第三步：改完代码热重载（不重启）**
 
-`Tools > Plugin Manager…` → 选中 `MaxSDPlugins` → 先 **Unload** 再 **Load**（或用 `Browse` 选中 `MaxSDPlugins/__init__.py` 重新加载，`Refresh` 刷新列表）。这样即可看到最新改动。
+`Tools > Plugin Manager…` → 选中 `MaxSDPlugins` → 先 **Unload** 再 **Load**（或用 `Browse` 选中 `MaxSDPlugins/__init__.py` 重新加载，`Refresh` 刷新列表）。这只会刷新功能、菜单与共享模块；修改 MaxSDPlugin.py / 包入口仍需重启。批处理运行中请先取消或等其完成，不要在宿主管理器强制卸载。
 
 > 也可用 `Browse` 直接选 `MaxSDPlugins/__init__.py` 临时加载一次，不必先配搜索路径。
 
@@ -143,3 +149,8 @@ MaxSDPlugin
 
 - `utilities/`：沉淀通用的、可被插件复用的工具函数。
 - `docs/`：记录基础概念、报错排查方法与开发日志，供开发时查阅。
+## 开发验证
+
+从工程根目录运行 `python 02_MySDPlugins/utilities/validate_project.py`，或使用 VS Code 的 `Python Lint Check` 任务。脚本在内存中编译插件源码并运行离线测试，不连接 Designer。CI 已配置 Windows Python 3.9/3.13 矩阵，尚需远端执行确认。
+
+菜单、入口与共享层的责任和实机验收清单见 [插件 README](MaxSDPlugins/README.md)。大型业务模块的进一步拆分属于后续计划，不在本次冒进重写。

@@ -1,9 +1,9 @@
 # SD16 / SD13 Python API 兼容查找表
 
 > 本表是 **本地标准查找表**。涉及导出工具 / 跨版本兼容的改动前**先查这里**，不要凭记忆猜 SD13 接口名。
-> 机器可读版本：[sd_api_compat.json](sd_api_compat.json)。新增差异时两份都要同步，并更新 `output_tools.py` 的 `_RUNTIME_COMPAT_SHIM`。
+> 机器可读版本：[sd_api_compat.json](sd_api_compat.json)。新增差异时两份都要同步，并更新 `MaxSDPlugins/sdcompat.py`。
 >
-> 最后更新：2026-07-22
+> 最后更新：2026-09-04
 
 ## 版本对照
 
@@ -52,18 +52,21 @@
 
 1. **能力探测**：`hasattr` + 遍历多个候选 UI 管理器（`getQtForPythonUIMgr` / `getUIMgr` / `getSDUIMgr`）与多个候选方法名；
 2. **多策略降级**：如 `focus_node` 先试 `focusGraphNode` 居中（SD16/14），再试 `setCurrentGraphSelection` / `selectNodes` 选中高亮（旧版兜底），SD13 走 Qt 层 `getPosition()`+`fitInView` 缩放居中，都不行才给友好提示；
-3. **永不抛异常 + 精确日志**：缺接口时打印缺失的方法名，返回安全默认值，不冒泡到 SD 主进程。
+3. **捕获预期 API 错误 + 精确日志**：缺接口时打印缺失的方法名，返回安全默认值，不冒泡到 SD 主进程。
 
 **接入方式**：
 - 功能模块：`from .. import sdcompat`，然后调 `sdcompat.get_current_graph()` / `sdcompat.focus_node(...)` / `sdcompat.get_main_window()` 等，`goto_node` 只做转发。
-- 导出物：OutputTools **始终把 `sdcompat.py` 打包**为 `_maxsd_bundle.root_sdcompat`，加载时**最先 exec 并调 `qt_patch()`**，随后其余模块的 `from .. import sdcompat` 被自动改写到它。
+- 独立导出物：`output_tools/exporter.py` 将真实包文件和资源嵌入 ZIP，加载至临时目录和独立 `_maxsd_bundle_<uuid>` 命名空间；先 import `sdcompat` 并调用 `qt_patch()`，保留原相对导入与真实 `__file__`。宿主结束使用后调用 `maxsd_shutdown()` 清理。
+- MG 导出物：AST 定位相对 import 后改写为 `LG_MaxSD_*`；兼容层固定为 `LG_MaxSD_sdcompat.py`，loader 需配置根目录与分类目录。资源按登记规则自动补齐。
+- 专用异常：`SD_API_ERRORS = (Exception, APIException)` 统一定义；捕获直接继承 `BaseException` 的 Adobe API 错误，但不吞掉 `KeyboardInterrupt` 或 `SystemExit`。
+- 窗口生命周期：`shared/lifecycle.py` 使用 shiboken 判活、单实例和关闭信号管理引用；插件自身重载先检查运行任务，再关闭窗口并清缓存。
 
 **扩展**：新发现跨版本差异 → 在 `sdcompat.py` 加一个候选方法名/策略即可，**一处维护**，功能模块与导出物都自动受益。
 
 ### 处理策略说明
 
 - **运行时回退（runtime-fallback）**：源码保留 `try PySide6 → except PySide2`，加载时自动选可用绑定。**禁止**把 `PySide6` 整体替换成 `PySide2`（会写死单版本，在另一版本上崩溃）。
-- **运行时补丁（runtime-patch）**：由导出物顶部的 `_maxsd_qt_compat()` 抹平（见 [output_tools.py](../MaxSDPlugins/output_tools/output_tools.py) 的 `_RUNTIME_COMPAT_SHIM`）。覆盖 #2 `QAction` 位置与 #3 `exec/exec_`。
+- **运行时补丁（runtime-patch）**：由 [sdcompat.py](../MaxSDPlugins/sdcompat.py) 的 `qt_patch()` 抹平。覆盖 #2 `QAction` 位置与 #3 `exec/exec_`。
 - **代码约定（code-convention）**：写代码时直接采用两版通用写法（如非作用域枚举 `Qt.UserRole`）。
 - **`hasattr` 守卫（hasattr-guard）**：SD 专有接口（`SDUIMgr` 等）无法运行时补丁，必须在调用处 `hasattr` 检查后降级。例：
 
@@ -77,7 +80,7 @@
 
 ## 导出模块实际用到的 Qt API（决定补丁覆盖范围）
 
-- 导入：仅 `QtWidgets`、`QtCore`（**不**用 `QtGui.QAction`）。
+- 导入：`QtWidgets`、`QtCore`、`QtGui`；实际绑定由运行时探测决定。
 - `exec`：`QMenu.exec(pos)`（→ 运行时补丁覆盖）。
 - 静态对话框：`QFileDialog.getSaveFileName` / `getOpenFileName`、`QMessageBox.information/warning`（两版一致）。
 - 枚举：`Qt.UserRole` / `Qt.Checked` / `Qt.Unchecked` / `Qt.ItemIsUserCheckable` / `Qt.ItemIsAutoTristate` / `Qt.CustomContextMenu`（非作用域，两版通用）。

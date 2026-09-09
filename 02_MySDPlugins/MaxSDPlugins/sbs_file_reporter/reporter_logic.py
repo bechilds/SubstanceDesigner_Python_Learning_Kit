@@ -7,19 +7,20 @@
 """
 
 import math
+from .. import sdcompat
 import ntpath
 import os
 import re
 
 try:
     from sd.api.sdproperty import SDPropertyCategory, SDPropertyInheritanceMethod
-except Exception:  # pragma: no cover - 仅普通 Python 环境
+except sdcompat.SD_API_ERRORS:  # pragma: no cover - 仅普通 Python 环境
     SDPropertyCategory = None
     SDPropertyInheritanceMethod = None
 
 try:
     from sd.api.sdvalueserializer import SDValueSerializer
-except Exception:  # pragma: no cover
+except sdcompat.SD_API_ERRORS:  # pragma: no cover
     SDValueSerializer = None
 
 
@@ -60,7 +61,7 @@ _RISK_WEIGHTS = {
 def _as_list(value):
     try:
         return list(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return []
 
 
@@ -69,7 +70,7 @@ def _properties(owner, category):
         return []
     try:
         return _as_list(owner.getProperties(category))
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return []
 
 
@@ -79,7 +80,7 @@ def _property_id(prop):
             result = getattr(prop, name)()
             if result:
                 return str(result)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
     return ""
 
@@ -91,7 +92,7 @@ def _value_numbers(value):
     raw = value
     try:
         raw = value.get()
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     if isinstance(raw, (int, float)):
         return [float(raw)]
@@ -101,7 +102,7 @@ def _value_numbers(value):
             break
         try:
             vector.append(float(getattr(raw, component)))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             break
     if vector:
         return vector
@@ -110,13 +111,13 @@ def _value_numbers(value):
         for item in raw:
             try:
                 result.append(float(item))
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 pass
         if result:
             return result
     try:
         text = SDValueSerializer.sToString(value) if SDValueSerializer else str(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         text = str(value)
     # 避免把类型名中的数字（例如 int2 / float4）误当成参数值。
     return [float(item) for item in re.findall(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", text)]
@@ -125,11 +126,11 @@ def _value_numbers(value):
 def _property_value(owner, prop):
     try:
         return owner.getPropertyValue(prop)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     try:
         return owner.getPropertyValueFromId(_property_id(prop), SDPropertyCategory.Input)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return None
 
 
@@ -137,14 +138,14 @@ def _definition_id(node):
     try:
         definition = node.getDefinition()
         return str(definition.getId() or "") if definition else ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return ""
 
 
 def _node_id(node):
     try:
         return str(node.getIdentifier() or "")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return ""
 
 
@@ -154,7 +155,7 @@ def _node_label(node):
     try:
         definition = node.getDefinition()
         label = str(definition.getLabel() or definition.getId() or "") if definition else ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return f"{label} ({identifier})" if identifier else (label or "<未知节点>")
 
@@ -169,7 +170,7 @@ def _inheritance_name(owner, prop):
         value = getattr(method, "value", method)
         if SDPropertyInheritanceMethod is not None:
             return SDPropertyInheritanceMethod(value).name
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return ""
 
@@ -188,7 +189,7 @@ def _graph_resolution(graph):
                 return width, height, False, f"Graph 绝对尺寸 {width} x {height}"
             if inheritance:
                 return 1024, 1024, True, f"Graph 尺寸为 {inheritance}，评分按 1024 x 1024 基准"
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
     return 1024, 1024, True, "Graph 尺寸不可可靠读取，评分按 1024 x 1024 基准"
 
@@ -222,7 +223,7 @@ def _node_resolution(node, graph_size, graph_resolution_estimated):
         width = 2 ** max(0, min(14, exp_x))
         height = 2 ** max(0, min(14, exp_y))
         return width, height, estimated, f"{basis} {width} x {height}"
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return graph_size[0], graph_size[1], True, "尺寸读取失败，按 Graph 基准估算"
 
 
@@ -235,10 +236,10 @@ def _is_graph_instance(node):
         class_name = ""
         try:
             class_name = str(resource.getClassName() or "").lower()
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
         return "graph" in class_name or hasattr(resource, "getNodes")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
 
 
@@ -278,7 +279,7 @@ def _upstream_by_property(node):
         try:
             if not prop.isConnectable():
                 continue
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         upstream = []
         try:
@@ -286,7 +287,7 @@ def _upstream_by_property(node):
                 candidate = connection.getInputPropertyNode()
                 if candidate is not None:
                     upstream.append(candidate)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
         if upstream:
             groups.append((_property_id(prop), upstream))
@@ -308,7 +309,7 @@ def _reachable_nodes(graph, switch_mode="all", node_scores=None):
     """从 Published Output 反向遍历，并按模式处理 Switch 输入分支。"""
     try:
         roots = _as_list(graph.getOutputNodes())
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         roots = []
 
     if switch_mode == "maximum":
@@ -422,7 +423,7 @@ def _graph_name(graph):
             value = getattr(graph, name)()
             if value:
                 return str(value)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
     return "<当前 Graph>"
 
@@ -434,7 +435,7 @@ def _file_name(graph):
         path = str(package.getFilePath() or "") if package is not None else ""
         if path:
             return ntpath.basename(path)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return "<未保存文件>"
 
@@ -451,7 +452,7 @@ def _score_histogram(nodes):
     for node in nodes:
         try:
             score = float(node.get("score", 0.0))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             score = 0.0
         for bucket in bins:
             maximum = bucket["maximum"]
@@ -488,7 +489,7 @@ def _official_package_roots():
             install_root = normalized[:marker_index]
             official_root = ntpath.normpath(ntpath.join(install_root, "resources", "packages"))
             roots.append(ntpath.normcase(official_root))
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return roots
 
@@ -496,7 +497,7 @@ def _official_package_roots():
 def _is_under_root(path, root):
     try:
         return ntpath.commonpath([path, root]) == root
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
 
 
@@ -511,7 +512,7 @@ def _is_approved_path(path):
 def _resource_path(resource):
     try:
         return str(resource.getFilePath() or "") if resource is not None else ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return ""
 
 
@@ -538,7 +539,7 @@ def _is_ghost_node(node, definition_id):
         input_count = len(_properties(definition, getattr(SDPropertyCategory, "Input", None)))
         output_count = len(_properties(definition, getattr(SDPropertyCategory, "Output", None)))
         return "ghost" in label or (input_count == 0 and output_count == 0)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
 
 
@@ -549,7 +550,7 @@ def _collect_file_risks(graph):
 
     try:
         nodes = _as_list(graph.getNodes())
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         nodes = []
 
     for node in nodes:
@@ -568,7 +569,7 @@ def _collect_file_risks(graph):
         expects_resource = any(token in definition_id for token in ("instance", "bitmap", "svg"))
         try:
             resource = node.getReferencedResource()
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             resource = None
         if expects_resource and resource is None:
             key = ("missing_resource", node_id)
@@ -601,19 +602,19 @@ def _collect_file_risks(graph):
     try:
         package = graph.getPackage()
         dependencies = _as_list(package.getDependencies()) if package is not None else []
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         dependencies = []
     for dependency in dependencies:
         try:
             dependency_path = str(dependency.getFilePath() or "")
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             dependency_path = ""
         normalized = _local_path(dependency_path)
         if not normalized:
             continue
         try:
             resolved_package = dependency.getPackage()
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             resolved_package = None
         if resolved_package is None or not os.path.exists(dependency_path):
             key = ("missing_dependency", normalized)

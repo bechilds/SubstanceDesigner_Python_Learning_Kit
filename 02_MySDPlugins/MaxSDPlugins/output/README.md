@@ -1,11 +1,26 @@
 # 曝光参数 (Exposed Parameters)
 
+> 当前开发工具版本：v0.21.2（`__init__.py/TOOL_VERSION`）；随插件 v0.25.0 升级。此版本号不代表 MG 已发布版本。
+
 管理当前图的「已曝露输入参数」：按分组枚举和排序、标记未被节点引用的空参数、复制并创建真实的新参数、批量修改设置、缓存/导出、删除（取消曝露），以及检查画布损坏节点。
 菜单位置：`MaxSDPlugin/Output/曝光参数`。
 
 ---
 
 ## 功能概览
+
+### 使用流程
+
+<whiteboard type="mermaid">
+flowchart TD
+    A[打开当前 Graph] --> B[刷新曝光参数与损坏节点列表]
+    B --> C[勾选并核对参数或节点]
+    C --> D{输入与目标确认无误?}
+    D -- 否 --> B
+    D -- 是 --> E[执行参数操作 或缓存 导出 加载]
+    E --> F[核对 Graph 与结果文件 按需保存 SBS]
+</whiteboard>
+
 
 - **按分组列出**当前图（`getCurrentGraph()`）的已曝露参数，**只含「INPUT PARAMETERS」与「INPUTS」两类**（排除 `$outputsize` 等以 `$` 开头的内置基础参数），并按 SD 的分组（`group` 注解）保留层级。分类与 Group 节点支持三态勾选，选择或取消组会同步组内全部参数；也支持全选 / 全不选。
   - `prop.isConnectable()` 为 `True` → 归入 **INPUTS**（图像输入）；为 `False` → 归入 **INPUT PARAMETERS**（数值型参数）。
@@ -125,3 +140,11 @@ OutputData JSON 结构：
 - **删除是破坏性操作**，但已包 UndoGroup（Ctrl+Z 可撤销）+ 删除前自动备份 + 二次确认。
 - **加载只还原值**，不会重建已删除的曝露参数；复杂类型（向量/颜色/枚举）暂不自动还原，会在汇总里列为“跳过”。
 - Adobe `APIException` 直接继承 `BaseException`；本模块使用专用异常元组捕获 SD API 错误，避免 `ItemNotFound` 穿透到 Designer Python 回调。
+
+## 框架升级说明
+
+本工具公开入口和原有参数保持不变。窗口统一由 `shared.lifecycle` 管理：重复打开复用、关闭释放；插件重载会关闭窗口。未保存的界面配置请先处理。升级包含入口变更，需要重启 Designer 一次。离线回归不替代目标 Designer 中的实际功能和撤销验证。
+
+## 更新日志
+
+- 2026-09-04 · v0.21.2 · 接入统一窗口生命周期 · 本工具入口与错误处理 · 随插件 v0.25.0 升级需重启 SD

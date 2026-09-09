@@ -14,18 +14,19 @@
 """
 
 # --- PySide 导入：SD 16.0.1 = PySide6；保留 PySide2 回退以兼容旧版 ---
+from .. import sdcompat
+
 try:
     from PySide6 import QtWidgets, QtCore
-except Exception:
+except sdcompat.SD_API_ERRORS:
     try:
         from PySide2 import QtWidgets, QtCore  # 旧版 SD 回退
-    except Exception as _e:
+    except sdcompat.SD_API_ERRORS as _e:
         QtWidgets = None
         QtCore = None
         print(f"[MaxSDPlugin/output] PySide 导入失败，UI 不可用: {_e}")
 
 from . import output_data as od
-from .. import sdcompat
 
 _LOG = "[MaxSDPlugin/output]"
 
@@ -740,7 +741,7 @@ if QtWidgets is not None:
             try:
                 from ..expose_param_sorting import show_window
                 show_window(self)
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 self._warn(f"打开参数分组排序失败：{error}")
 
         def _parameter_item_changed(self, item, column):
@@ -935,7 +936,7 @@ if QtWidgets is not None:
                 data = od.build_output_data(graph, self._checked_ids())
                 od.save_output_data(data, path)
                 self._info(f"已缓存 OutputData：\n{path}")
-            except Exception as e:
+            except sdcompat.SD_API_ERRORS as e:
                 print(f"{_LOG} 缓存失败: {e}")
                 self._warn(f"缓存失败：{e}")
 
@@ -955,7 +956,7 @@ if QtWidgets is not None:
                 data = od.build_output_data(graph, self._checked_ids())
                 od.save_output_data(data, path)
                 self._info(f"已导出 OutputData：\n{path}")
-            except Exception as e:
+            except sdcompat.SD_API_ERRORS as e:
                 print(f"{_LOG} 导出失败: {e}")
                 self._warn(f"导出失败：{e}")
 
@@ -973,7 +974,7 @@ if QtWidgets is not None:
                 return
             try:
                 data = od.load_output_data(path)
-            except Exception as e:
+            except sdcompat.SD_API_ERRORS as e:
                 print(f"{_LOG} 加载失败: {e}")
                 self._warn(f"加载失败：{e}")
                 return
@@ -1032,7 +1033,7 @@ if QtWidgets is not None:
             if backup_path:
                 try:
                     od.save_output_data(od.build_output_data(graph, ids), backup_path)
-                except Exception as e:
+                except sdcompat.SD_API_ERRORS as e:
                     print(f"{_LOG} 删除前备份失败: {e}")
 
             deleted, failed, reset = od.delete_exposed_parameters(graph, ids)
@@ -1085,15 +1086,14 @@ if QtWidgets is not None:
 
 
 def show_window(main_win=None):
-    """功能入口：弹出曝光参数对话框。由 MaxSDPlugin.py 的菜单动作调用。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
     try:
-        _dialog_ref = ExposedParametersDialog(parent=main_win)
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-    except Exception as e:
-        print(f"{_LOG} 打开窗口失败: {e}")
+        return show_dialog(__name__, lambda: ExposedParametersDialog(parent=main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

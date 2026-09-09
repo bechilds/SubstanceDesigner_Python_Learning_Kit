@@ -1,52 +1,74 @@
-# 输出脚本 (output_tools)
+# 输出脚本（OutputTools）
 
-将选定的 MaxSDPlugins 功能导出为独立脚本，或按 MG 工具包约定写入自定义 MaxSD 目录。
-菜单位置：`MaxSDPlugin/OutputTools/输出脚本`。
+# 项目概览
 
----
+开发工具版本 v0.23.0，随插件 v0.25.0 整理。本文描述本地开发版，不代表已部署到 MG。
 
-## 功能概览
+# 功能说明与使用流程
 
-- 扫描当前插件的功能分类与 Python 模块，按树形列表勾选导出内容。
-- “导出为独立脚本”生成带隔离命名空间和 `sdcompat` 的单个 Python 文件。
-- “输出到 MG...”生成 `LG_MaxSD_*.py`，保留分类目录并允许自定义 MaxSD 根目录。
-- MG 输出自动改写相对 import、处理同名模块冲突，并提示本次未勾选的依赖。
+## 输出脚本
 
----
+菜单/入口：`MaxSDPlugin/OutputTools/输出脚本`；公开函数 `show_window(main_win=None)`、`export_modules(module_paths, out_path, sd_version="auto")`、`export_modules_to_mg(module_paths, output_root)` 保留。
 
-## 代码结构
+用途：将勾选功能及其 Python 相对导入依赖打包，避免遗漏跨功能引用。不修改 Graph、Package 或插件源代码。
 
-| 文件 / 函数 | 职责 |
-|---|---|
-| `output_tools.py` | 功能扫描、两种导出逻辑与对话框 UI |
-| `collect_features()` | 收集可导出的功能模块 |
-| `export_modules()` | 打包独立、自包含脚本 |
-| `export_modules_to_mg()` | 输出 MG 分类目录、模块和兼容层 |
-| `_rewrite_mg_source()` | 将插件相对 import 改写为 `LG_MaxSD_*` 绝对 import |
-| `show_window()` | 菜单入口，打开 OutputTools 对话框 |
+<whiteboard type="mermaid">
+flowchart TD
+    A[准备插件模块与处理 SBS] --> B[勾选功能并选择输出路径]
+    B --> C[解析依赖并检查语法与资源]
+    C --> D{检查通过?}
+    D -- 否 --> E[提示错误 不写出]
+    D -- 是 --> F{输出类型?}
+    F -- 独立脚本 --> G[嵌入完整包与资源 写出单个 Python 文件]
+    F -- MG --> H[改写导入 写出分类模块 资源与清单]
+    G --> I[在 Designer 中加载并验证入口]
+    H --> I
+</whiteboard>
 
----
+### 参数说明
 
-## 用到的 SD API
+| 参数/控件 | 作用、格式与默认行为 | 输出影响、约束与撤销 |
+|---|---|---|
+| 功能/分支勾选 | 当前插件分类中的 Python 模块；默认不选；支持全选/全不选 | 至少选择一项；自动补齐相对依赖及包入口，依赖模块可能多于勾选项；勾选不写文件 |
+| 刷新 | 重新扫描已登记分类；无额外输入 | 重置勾选，不修改源文件；新增分类仍需登记 `_CATEGORY_TITLES` |
+| 独立脚本路径 `out_path` | 保存对话框默认文件名 `_maxsd_export.py`；可写的外部文件路径 | UI 覆盖按保存对话框确认；API 调用直接替换目标；禁止位于插件源目录内；无自动备份，覆盖不能 Ctrl+Z |
+| MG 根目录 `output_root` | 选择目录；已有 `LGPublicMGEnv` 对应 MaxSD 目录时作为默认位置，否则自行选择 | 确认后覆盖同名生成模块、SBS 和清单；禁止写入插件源目录；不清理旧文件，无自动备份 |
+| `sd_version`（API） | 旧参数保留，默认 `"auto"`；不再通过它静态替换 Qt 导入 | 始终运行时尝试 PySide6/PySide2；不是宿主兼容性验证开关 |
 
-- 本模块不直接修改 Graph 或 Package。
-- `sdcompat.py` 会随两种导出方式一并写出，供生成模块适配 SD13/PySide2 与 SD16/PySide6。
-- UI 使用 PySide 的 `QTreeWidget`、`QFileDialog` 与 `QMessageBox`。
+### 输出结果
 
----
+独立脚本：单个 `.py` 内嵌真实包目录与已登记资源。运行时解压到临时目录，每次加载使用独立的 `_maxsd_bundle_<uuid>`，模块具有真实 `__file__`；先加载 `sdcompat` 并执行 `qt_patch()`。相对 import 保持不变。
 
-## 扩展指南
+- `maxsd_activate(main_win=None)` 返回所选模块的窗口入口字典，旧的“分类_模块”键保留；只作为依赖补入的窗口不会自动打开。
+- 直接运行脚本会调用 `maxsd_show_all()`。宿主 import 则不会自动弹窗。
+- 宿主结束使用时调用 `maxsd_shutdown()` 关闭窗口、移除本导出物模块及临时目录。忙时返回 False，应等待或取消任务后重试。
+- 自动附带 `BatchMergeTexChannel.sbs`（当依赖批处理模块时），保留相对位置。不扫描、复制用户工程的任意外部资产。
 
-1. 新增可导出功能时，将包目录名与显示标题加入 `_CATEGORY_TITLES`。
-2. 功能存在 logic/window 依赖时，导出到 MG 前同时勾选相关模块。
-3. MG 的启动脚本通过 `LG_MaxSD_loader.py` 加载生成文件，再调用模块公开的 `show_window()`。
-4. 在 `LG_Tool.py` 中按团队菜单结构注册对应 `*_Start.py`；OutputTools 不自动修改宿主文件。
+MG 输出：根目录兼容层、分类目录中的 `LG_MaxSD_*.py`、需要的 SBS，以及 `maxsd_export_manifest.json`。同名模块按分类区分；命名基于当前完整源码目录，不随本次勾选组合变化。清单列出所选模块、补齐模块、生成文件与资源。
 
----
+### 注意事项与已知限制
 
-## 已知约束
+- 依赖解析覆盖静态相对 import（包括函数内部导入），不推断动态 `importlib` 字符串、第三方依赖或未登记资源。未来新增资源必须显式加入导出计划。
+- Python 标准库、Designer 的 `sd`、宿主 PySide 不打包；目标环境仍须提供它们。
+- 写出前检查完整依赖闭包的语法与必需资源；独立文件原子替换。MG 为逐文件原子替换，不是跨文件事务；中途 I/O 失败会列出已写文件，此时不要部署半成品。
+- MG 不自动修改 `*_Start.py`、`LG_Tool.py` 或注册路径。loader 需要加入根目录及所有生成模块所在目录，再由启动脚本调用公开入口。
+- 导出目录内既有的旧文件不会自动删除；正式发布前对照清单核对，不要把开发目录直接当作已验证发布物。
+- 外部团队路径及现有资源信任/排除规则不在此次配置整理范围内。
 
-- MG 输出目录应选择 MaxSD 根目录；工具会在其中创建各功能分类子目录。
-- 同名 `LG_MaxSD_*.py` 会在确认后覆盖，现有 `*_Start.py` 与 `LG_Tool.py` 不会被修改。
-- 未勾选的相对依赖不会自动补选，完成后会在结果消息中列出。
-- 依赖 `.sbs`、图片或其他外部资源的功能仍需手工复制资源并维护路径。
+# 安装与使用
+
+随 MaxSDPlugins 加载，无额外 pip 依赖。生成脚本通过 Designer Python Editor 执行；MG 集成按上述 loader 与启动脚本规则进行。升级 v0.25.0 后重启 Designer 一次。
+
+# 技术与兼容性
+
+`output_tools.py` 负责扫描、UI 和兼容公开入口；`exporter.py` 使用标准库 AST、ZIP、临时目录与原子文件替换。MG 只改写 AST 定位到的相对导入，不改无关字符串、设置键或业务名称。
+
+目标为 SD16/PySide6 与 SD13/PySide2。离线测试只验证语法、依赖、导入和资源布局，不能证明实际 SD API/Qt 窗口在两个版本均可运行。
+
+# 发布与更新规则
+
+正式发布前在目标 Designer 验证：只勾选开关窗口仍能打开依赖功能；批处理资源可定位；重复导入互不覆盖；关闭/重载无残留。MG 还需验证 loader、菜单注册及资源布局。发布后才更新 AGENTS 的 MG 台账；本次未执行外部发布。
+
+# 更新日志
+
+- 2026-09-04 · v0.23.0 · 拆分导出层，自动依赖闭包与 SBS 打包，AST 导入改写、清单和隔离清理 · 输出脚本/MG 开发导出与窗口入口 · 随插件 v0.25.0 升级需重启 SD

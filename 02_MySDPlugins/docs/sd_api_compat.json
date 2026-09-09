@@ -3,26 +3,89 @@
   "schema_version": 2,
   "mechanism": {
     "layer": "MaxSDPlugins/sdcompat.py",
-    "principle": "集中式兼容层：能力探测(hasattr/多候选管理器与方法名) + 多策略降级 + 永不抛异常 + 精确日志。所有版本脆弱的 SD/Qt 接口只走它。",
-    "bundled_as": "_maxsd_bundle.root_sdcompat（OutputTools 导出时自动打包，最先 exec 并调 qt_patch()）",
-    "used_by": "功能模块 from .. import sdcompat；导出时自动改写为 from _maxsd_bundle import root_sdcompat as sdcompat"
+    "principle": "集中式兼容层：能力探测(hasattr/多候选管理器与方法名) + 多策略降级 + 捕获预期 API 错误 + 精确日志。所有版本脆弱的 SD/Qt 接口只走它。",
+    "bundled_as": "_maxsd_bundle_<uuid>.sdcompat；真实包解压到临时目录，先 import 并调用 qt_patch()，结束时 maxsd_shutdown() 清理",
+    "used_by": "功能与独立脚本保持 from .. import sdcompat；MG 使用 AST 改写为 LG_MaxSD_sdcompat",
+    "api_errors": "SD_API_ERRORS = (Exception, APIException)，不捕获 KeyboardInterrupt/SystemExit",
+    "lifecycle": "shared/lifecycle.py：窗口单实例、关闭释放、运行中阻止插件自身重载"
   },
-  "last_updated": "2026-07-22",
+  "last_updated": "2026-09-04",
   "versions": {
-    "SD16": { "app": "Adobe Substance 3D Designer 16.0.1", "python": "3.13.x", "pyside": "PySide6", "qt": "6.8.x" },
-    "SD14_15": { "app": "Substance 3D Designer 14.0 - 15.x", "pyside": "PySide6", "qt": "6.5.x" },
-    "SD13": { "app": "Substance Designer 13.x", "pyside": "PySide2", "qt": "5.15.x" }
+    "SD16": {
+      "app": "Adobe Substance 3D Designer 16.0.1",
+      "python": "3.13.x",
+      "pyside": "PySide6",
+      "qt": "6.8.x"
+    },
+    "SD14_15": {
+      "app": "Substance 3D Designer 14.0 - 15.x",
+      "pyside": "PySide6",
+      "qt": "6.5.x"
+    },
+    "SD13": {
+      "app": "Substance Designer 13.x",
+      "pyside": "PySide2",
+      "qt": "5.15.x"
+    }
   },
   "sd13_ui_managers": {
-    "_comment": "SD13 实测（app.getX()->dir 去掉 __ 前缀）。关键结论：SD13 只有 getXxxSelection 读取接口，没有 focusGraphNode / getGraphViewIDCount / setCurrentGraphSelection 等 focus/set 写入接口 -> 无法程序化定位/选中节点，Goto 只能降级为回显节点标识。SD16/SD14 才有 focusGraphNode。",
+    "_comment": "SD13 历史实测：官方选择接口仅为读取；无 focus 方法时使用 Qt 层 getPosition()+fitInView，见 conclusions。",
     "getSDUIMgr": "不存在（SD13 无此方法）",
     "getQtForPythonUIMgr": {
       "type": "QtForPythonUIMgrWrapper",
-      "methods": ["addActionToExplorerToolbar", "addActionToGraphViewToolbar", "addToolbarToGraphView", "convertSDTextureToQImage", "deleteMenu", "findMenuFromObjectName", "getCurrentGraph", "getCurrentGraphSelectedNodes", "getCurrentGraphSelectedObjects", "getCurrentGraphSelection", "getCurrentGraphSelectionFromGraphViewID", "getExplorerSelection", "getGraphFromGraphViewID", "getGraphSelectedNodesFromGraphViewID", "getGraphSelectedObjectsFromGraphViewID", "getMainWindow", "newDockWidget", "newMenu", "registerExplorerCreatedCallback", "registerExplorerSelectionChangedCallback", "registerGraphViewCreatedCallback", "unregisterCallback"]
+      "methods": [
+        "addActionToExplorerToolbar",
+        "addActionToGraphViewToolbar",
+        "addToolbarToGraphView",
+        "convertSDTextureToQImage",
+        "deleteMenu",
+        "findMenuFromObjectName",
+        "getCurrentGraph",
+        "getCurrentGraphSelectedNodes",
+        "getCurrentGraphSelectedObjects",
+        "getCurrentGraphSelection",
+        "getCurrentGraphSelectionFromGraphViewID",
+        "getExplorerSelection",
+        "getGraphFromGraphViewID",
+        "getGraphSelectedNodesFromGraphViewID",
+        "getGraphSelectedObjectsFromGraphViewID",
+        "getMainWindow",
+        "newDockWidget",
+        "newMenu",
+        "registerExplorerCreatedCallback",
+        "registerExplorerSelectionChangedCallback",
+        "registerGraphViewCreatedCallback",
+        "unregisterCallback"
+      ]
     },
     "getUIMgr": {
       "type": "SDUIMgr",
-      "methods": ["addActionToExplorerToolbar", "addActionToGraphViewToolbar", "addToolbarToGraphView", "convertSDTextureToQImage", "deleteMenu", "findMenuFromObjectName", "getClassName", "getCurrentGraph", "getCurrentGraphSelectedNodes", "getCurrentGraphSelectedObjects", "getCurrentGraphSelection", "getCurrentGraphSelectionFromGraphViewID", "getExplorerSelection", "getGraphFromGraphViewID", "getGraphSelectedNodesFromGraphViewID", "getGraphSelectedObjectsFromGraphViewID", "getMainWindowPtr", "newDockWidget", "newMenu", "registerExplorerCreatedCallback", "registerExplorerSelectionChangedCallback", "registerGraphViewCreatedCallback", "release", "unregisterCallback"]
+      "methods": [
+        "addActionToExplorerToolbar",
+        "addActionToGraphViewToolbar",
+        "addToolbarToGraphView",
+        "convertSDTextureToQImage",
+        "deleteMenu",
+        "findMenuFromObjectName",
+        "getClassName",
+        "getCurrentGraph",
+        "getCurrentGraphSelectedNodes",
+        "getCurrentGraphSelectedObjects",
+        "getCurrentGraphSelection",
+        "getCurrentGraphSelectionFromGraphViewID",
+        "getExplorerSelection",
+        "getGraphFromGraphViewID",
+        "getGraphSelectedNodesFromGraphViewID",
+        "getGraphSelectedObjectsFromGraphViewID",
+        "getMainWindowPtr",
+        "newDockWidget",
+        "newMenu",
+        "registerExplorerCreatedCallback",
+        "registerExplorerSelectionChangedCallback",
+        "registerGraphViewCreatedCallback",
+        "release",
+        "unregisterCallback"
+      ]
     },
     "conclusions": {
       "current_graph": "getQtForPythonUIMgr().getCurrentGraph() 可用（两个管理器都有）",
@@ -77,7 +140,11 @@
       "strategy": "sdcompat.focus_node 多策略：SD16/14 走 focusGraphNode 居中；SD13 无官方接口 -> 策略3 Qt 层 getPosition()+fitInView 缩放居中（已验证）；均失败才回显 <label>(id:)@ (x,y)+复制 id 到剪贴板（不崩溃）。",
       "rule": "统一调 sdcompat.focus_node(graph, node_id, app)；功能模块的 goto_node 只转发。核对某版本接口必须在该版本 SD 里 introspect，别读别的版本的 stub。",
       "auto_shim": false,
-      "affected_files": ["MaxSDPlugins/sdcompat.py", "MaxSDPlugins/output/output_data.py", "MaxSDPlugins/debug/check_dependencies.py"]
+      "affected_files": [
+        "MaxSDPlugins/sdcompat.py",
+        "MaxSDPlugins/output/output_data.py",
+        "MaxSDPlugins/debug/check_dependencies.py"
+      ]
     },
     {
       "id": "graph-object-comment",
@@ -87,15 +154,35 @@
       "strategy": "import-guard",
       "rule": "功能模块守卫 sd.api.sdgraphobjectcomment 导入；接口不可用时明确提示并保持 Graph 不变。",
       "auto_shim": false,
-      "affected_files": ["MaxSDPlugins/auto_add_expose_comment/auto_add_expose_comment.py"]
+      "affected_files": [
+        "MaxSDPlugins/auto_add_expose_comment/auto_add_expose_comment.py"
+      ]
     }
   ],
   "exported_modules_qt_usage": {
     "_comment": "导出的功能模块实际用到的 Qt API（决定补丁覆盖范围）。",
-    "imports": ["QtWidgets", "QtCore"],
+    "imports": [
+      "QtWidgets",
+      "QtCore",
+      "QtGui"
+    ],
     "uses_qtgui_qaction": false,
-    "exec_calls": ["QMenu.exec(pos)"],
-    "static_dialogs": ["QFileDialog.getSaveFileName", "QFileDialog.getOpenFileName", "QMessageBox.information/warning"],
-    "enum_access": ["Qt.UserRole", "Qt.Checked", "Qt.Unchecked", "Qt.ItemIsUserCheckable", "Qt.ItemIsAutoTristate", "Qt.CustomContextMenu"]
-  }
+    "exec_calls": [
+      "QMenu.exec(pos)"
+    ],
+    "static_dialogs": [
+      "QFileDialog.getSaveFileName",
+      "QFileDialog.getOpenFileName",
+      "QMessageBox.information/warning"
+    ],
+    "enum_access": [
+      "Qt.UserRole",
+      "Qt.Checked",
+      "Qt.Unchecked",
+      "Qt.ItemIsUserCheckable",
+      "Qt.ItemIsAutoTristate",
+      "Qt.CustomContextMenu"
+    ]
+  },
+  "validation_scope": "2026-09-04：离线语法、导出导入与 stub 回归；未完成本版本 SD13/16 实机验证。"
 }

@@ -5,11 +5,10 @@ import contextlib
 import os
 import xml.etree.ElementTree as ET
 
-try:
-    from sd.api.apiexception import APIException
-    _SD_API_ERRORS = (Exception, APIException)
-except Exception:
-    _SD_API_ERRORS = (Exception,)
+from .. import sdcompat
+
+APIException = sdcompat.APIException
+_SD_API_ERRORS = sdcompat.SD_API_ERRORS
 
 try:
     from sd.api.sdproperty import SDPropertyCategory
@@ -22,7 +21,6 @@ except Exception:
     SDValueBool = None
     SDValueString = None
 
-from .. import sdcompat
 from ..output import output_data
 
 _LOG = "[MaxSDPlugin/switch_manager]"
@@ -32,6 +30,22 @@ _VISIBLE_IF_CANDIDATES = ("visibleIf", "visible_if", "visibleif")
 def get_current_graph(app=None):
     """返回当前活动 Graph；不可用时返回 None。"""
     return sdcompat.get_current_graph(app)
+
+
+def get_graph_scope(graph):
+    """记录扫描对象；未保存 Package 用 UID 区分，读取失败时禁止写入。"""
+    if graph is None:
+        return None
+    try:
+        package = graph.getPackage()
+        uid = str(package.getUID() or "")
+        identifier = str(graph.getIdentifier() or "")
+        path = str(package.getFilePath() or "")
+        if not uid or not identifier:
+            return None
+        return (uid, os.path.normcase(os.path.abspath(path)) if path else "", identifier)
+    except _SD_API_ERRORS:
+        return None
 
 
 def _error_text(error):
@@ -404,6 +418,19 @@ def create_boolean_switch(
             parameter_id, SDTypeBool.sNew(), SDPropertyCategory.Input)
         if prop is None:
             raise RuntimeError("graph.newProperty() 未能创建 Boolean 参数")
+        try:
+            _ensure_boolean_editor(graph, prop, force=True)
+        except _SD_API_ERRORS as error:
+            # 不能将缺少发布控件的参数当作成功创建；只清理本次新参数。
+            try:
+                graph.deleteProperty(prop)
+            except _SD_API_ERRORS as cleanup_error:
+                raise RuntimeError(
+                    f"按钮控件设置失败：{_error_text(error)}；"
+                    f"新参数清理失败，请撤销或删除 {parameter_id}："
+                    f"{_error_text(cleanup_error)}") from error
+            raise RuntimeError(
+                f"按钮控件设置失败，已移除本次新参数：{_error_text(error)}") from error
         label_changed, label_errors = _set_text_setting(
             graph, prop, "label", (label or parameter_id).strip())
         group_changed, group_errors = _set_text_setting(
@@ -416,6 +443,52 @@ def create_boolean_switch(
         "group_changed": group_changed,
         "warnings": label_errors + group_errors,
     }
+
+
+def _ensure_boolean_editor(graph, prop, force=False):
+    """通过 Adobe editor 注解补齐空控件；已有自定义控件保持不变。
+
+    本地官方 sample_sbs_graph_inputs.py 使用 editor 注解；官方
+    test_write_content.py 明确包含 buttons。不能写普通 metadata 替代它。
+    """
+    value = graph.getPropertyAnnotationValueFromId(prop, "editor")
+    editor = value.get() if value is not None else ""
+    if editor and not force:
+        return False
+    graph.setPropertyAnnotationValueFromId(
+        prop, "editor", SDValueString.sNew("buttons"))
+    value = graph.getPropertyAnnotationValueFromId(prop, "editor")
+    if value is None or value.get() != "buttons":
+        raise RuntimeError("editor=buttons 写入后读回不一致")
+    return True
+
+
+def repair_boolean_switch_editors(graph, switch_group):
+    """只补齐当前 Group 中非连接型 Boolean 的空 editor，可撤销。"""
+    summary = {"updated": [], "skipped": [], "failed": []}
+    switch_group = (switch_group or "").strip()
+    if graph is None or not switch_group or None in (
+            SDPropertyCategory, SDValueString):
+        summary["failed"].append(("<graph>", "请选择当前 Graph 和开关 Group"))
+        return summary
+    try:
+        properties = graph.getProperties(SDPropertyCategory.Input)
+        with _undo_group("MaxSDPlugin 补齐开关按钮控件"):
+            for prop in properties:
+                parameter_id = "<unknown>"
+                try:
+                    parameter_id = prop.getId()
+                    if (parameter_id.startswith("$") or prop.isConnectable()
+                            or not _is_boolean_parameter({"type": prop.getType().getId()})
+                            or _read_group(graph, prop).strip() != switch_group):
+                        continue
+                    changed = _ensure_boolean_editor(graph, prop)
+                    summary["updated" if changed else "skipped"].append(parameter_id)
+                except _SD_API_ERRORS as error:
+                    summary["failed"].append((parameter_id, _error_text(error)))
+    except _SD_API_ERRORS as error:
+        summary["failed"].append(("<graph>", _error_text(error)))
+    return summary
 
 
 def update_parameter_values(graph, updates):

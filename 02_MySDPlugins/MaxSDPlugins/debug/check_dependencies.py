@@ -16,7 +16,7 @@ publish/cook 时产生「警告」的节点 + package 依赖，列成清单，�
 可选「试发布」：把当前 package 导出成临时 .sbsar，验证能否成功发布；详细的逐节点
 警告会打印在 SD 自带的日志面板里（C++ cooker 的日志无法在 Python 内完整截获）。
 
-数据层与 UI 层放在同一文件（<300 行）。SD 专有 API 全部包 try/except，
+扫描逻辑与旧公开入口暂时保留，SD 专有 API 使用统一异常边界，
 取不到时优雅返回，不让异常冒泡到 SD 主进程。
 """
 
@@ -30,21 +30,21 @@ from .. import sdcompat  # 跨版本 SD/Qt 接口兼容层（唯一真源）
 # SD 专有类型：工作区 lint 找不到属正常，运行时在 SD 内可用
 try:
     from sd.api.sdproperty import SDPropertyCategory
-except Exception:  # pragma: no cover
+except sdcompat.SD_API_ERRORS:  # pragma: no cover
     SDPropertyCategory = None
 
 try:
     from sd.api.sdvalueserializer import SDValueSerializer
-except Exception:  # pragma: no cover
+except sdcompat.SD_API_ERRORS:  # pragma: no cover
     SDValueSerializer = None
 
 # --- PySide 导入：SD 16.0.1 = PySide6；保留 PySide2 回退以兼容旧版 ---
 try:
     from PySide6 import QtWidgets, QtCore
-except Exception:
+except sdcompat.SD_API_ERRORS:
     try:
         from PySide2 import QtWidgets, QtCore  # 旧版 SD 回退
-    except Exception as _e:
+    except sdcompat.SD_API_ERRORS as _e:
         QtWidgets = None
         QtCore = None
         print(f"[MaxSDPlugin/debug] PySide 导入失败，UI 不可用: {_e}")
@@ -67,7 +67,7 @@ def get_package(graph):
     """返回该图所属 package；取不到返回 None。"""
     try:
         return graph.getPackage() if graph else None
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return None
 
 
@@ -78,7 +78,7 @@ def _value_to_str(value):
         if SDValueSerializer is not None:
             return SDValueSerializer.sToString(value)
         return str(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return str(value)
 
 
@@ -92,12 +92,12 @@ def _node_label(node):
     """节点显示名：标识符 + 定义标签，便于在图里定位。"""
     try:
         ident = node.getIdentifier() or ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         ident = ""
     try:
         d = node.getDefinition()
         lbl = (d.getLabel() or d.getId()) if d else ""
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         lbl = ""
     return f"{lbl} (id:{ident})" if ident else (lbl or "<未知节点>")
 
@@ -108,7 +108,7 @@ def _has_empty_get_var(func_graph):
         return False
     try:
         fnodes = func_graph.getNodes()
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
     for i in range(len(fnodes)):
         try:
@@ -118,7 +118,7 @@ def _has_empty_get_var(func_graph):
             if "get" not in did.lower():
                 continue
             cval = fnode.getPropertyValueFromId("__constant__", SDPropertyCategory.Input)
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         if cval is None or (_strip_quotes(_value_to_str(cval)) or "") == "":
             return True
@@ -151,7 +151,7 @@ def collect_unused_node_ids(graph):
     all_ids, used, ignored = set(), set(), set()
     try:
         nodes = graph.getNodes()
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return set()
     for i in range(len(nodes)):
         try:
@@ -160,13 +160,13 @@ def collect_unused_node_ids(graph):
             d = node.getDefinition()
             if d and d.getId() in INPUT_NODES_COMP:
                 ignored.add(node.getIdentifier())
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
 
     def _walk(node):
         try:
             nid = node.getIdentifier()
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             return
         if nid in used:
             return
@@ -177,13 +177,13 @@ def collect_unused_node_ids(graph):
                     continue
                 for c in node.getPropertyConnections(p):
                     _walk(c.getInputPropertyNode())
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
 
     try:
         for out in graph.getOutputNodes():
             _walk(out)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return all_ids - used - ignored
 
@@ -198,7 +198,7 @@ def scan_missing_deps(graph):
         return out
     try:
         deps = pkg.getDependencies()
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return out
     for i in range(len(deps)):
         try:
@@ -216,7 +216,7 @@ def scan_missing_deps(graph):
                                         f"引用缺失依赖包: {fp}，删掉本节点或重新定位", nid))
                     else:
                         out.append((CAT_MISSING_DEP, fp, "依赖包找不到，发布会失败；删掉引用它的节点或重新定位", ""))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
     return out
 
@@ -227,7 +227,7 @@ def _find_dep_culprit_nodes(graph):
     found = []
     try:
         nodes = graph.getNodes()
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return found
     for i in range(len(nodes)):
         try:
@@ -237,7 +237,7 @@ def _find_dep_culprit_nodes(graph):
             if ("instance" in did or "bitmap" in did or "svg" in did) \
                     and node.getReferencedResource() is None:
                 found.append((node.getIdentifier() or "", _node_label(node)))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
     return found
 
@@ -249,7 +249,7 @@ def scan_warnings(graph):
         return warnings
     try:
         nodes = graph.getNodes()
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         print(f"{_LOG} 读取节点失败: {e}")
         return warnings
 
@@ -257,7 +257,7 @@ def scan_warnings(graph):
     try:
         for i in range(len(graph.getOutputNodes())):
             output_ids.add(graph.getOutputNodes()[i].getIdentifier())
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
 
     unused_ids = collect_unused_node_ids(graph)
@@ -265,12 +265,12 @@ def scan_warnings(graph):
     for i in range(len(nodes)):
         try:
             node = nodes[i]
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             continue
         label = _node_label(node)
         try:
             nid = node.getIdentifier() or ""
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             nid = ""
 
         # 1. 损坏的 Get 节点（输入参数被空变量函数驱动）
@@ -279,7 +279,7 @@ def scan_warnings(graph):
                 if _has_empty_get_var(node.getPropertyGraph(p)):
                     warnings.append((CAT_BROKEN_FUNC, label, "Get 节点变量名为空，cook 时报 Empty variable", nid))
                     break
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
 
         # 2. 缺失/外部依赖资源（bitmap / svg）
@@ -294,7 +294,7 @@ def scan_warnings(graph):
                     path = res.getFilePath() if hasattr(res, "getFilePath") else ""
                     if path and not os.path.exists(path):
                         warnings.append((CAT_MISSING_RES, label, f"外部资源文件不存在: {path}", nid))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
 
         # 3 & 4. output 未连接 / 悬挂节点
@@ -312,7 +312,7 @@ def scan_warnings(graph):
                     warnings.append((CAT_UNCONNECTED, label, "输出节点没有输入连线", nid))
             elif conn_out == 0:
                 warnings.append((CAT_DANGLING, label, "节点无任何下游连接，发布时被忽略", nid))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
 
         # 5. Clean graph(s) 同款：未连到任何 output 的可清理节点
@@ -343,7 +343,7 @@ def delete_nodes(graph, node_ids):
     try:
         from sd.api.sdhistoryutils import SDHistoryUtils
         ctx = SDHistoryUtils.UndoGroup("Publish Checker 删除节点")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         ctx = None
     try:
         if ctx is not None:
@@ -354,7 +354,7 @@ def delete_nodes(graph, node_ids):
                 if node:
                     graph.deleteNode(node)
                     n += 1
-            except Exception as e:
+            except sdcompat.SD_API_ERRORS as e:
                 print(f"{_LOG} 删除节点 {nid} 失败: {e}")
     finally:
         if ctx is not None:
@@ -382,7 +382,7 @@ def test_publish(graph):
         out = os.path.join(tempfile.gettempdir(), "maxsd_check_dependencies.sbsar")
         exporter.exportPackageToSBSAR(pkg, out)
         return True, f"试发布成功，详细警告见 SD 日志面板。\n输出: {out}"
-    except Exception as e:
+    except sdcompat.SD_API_ERRORS as e:
         return False, f"试发布失败: {e}\n详细警告见 SD 日志面板。"
 
 
@@ -496,6 +496,7 @@ if QtWidgets is not None:
             item = self._table.itemAt(pos)
             if item is None:
                 return
+            self._table.setCurrentItem(item)
             menu = QtWidgets.QMenu(self)
             act = menu.addAction("Goto（在图中定位）")
             act.triggered.connect(self._goto_selected)
@@ -532,6 +533,11 @@ if QtWidgets is not None:
             self._do_delete(ids)
 
         def _do_delete(self, ids):
+            answer = QtWidgets.QMessageBox.question(
+                self, "删除节点确认", f"删除 {len(set(ids))} 个节点？可用 Ctrl+Z 撤销。",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
             graph = get_current_graph()
             if graph is None:
                 QtWidgets.QMessageBox.warning(self, "MaxSDPlugin", "未找到当前图。")
@@ -541,6 +547,11 @@ if QtWidgets is not None:
             QtWidgets.QMessageBox.information(self, "MaxSDPlugin", msg)
 
         def _clean_graph(self):
+            answer = QtWidgets.QMessageBox.question(
+                self, "清理当前 Graph", "删除当前 Graph 中未连接到输出的节点？可用 Ctrl+Z 撤销。",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
             graph = get_current_graph()
             if graph is None:
                 QtWidgets.QMessageBox.warning(self, "MaxSDPlugin", "未找到当前图。")
@@ -572,15 +583,14 @@ if QtWidgets is not None:
 
 
 def show_window(main_win=None):
-    """功能入口：弹出 Publish Checker 对话框。由 MaxSDPlugin.py 的菜单动作调用。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
     try:
-        _dialog_ref = CheckDependenciesDialog(parent=main_win)
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-    except Exception as e:
-        print(f"{_LOG} 打开窗口失败: {e}")
+        return show_dialog(__name__, lambda: CheckDependenciesDialog(parent=main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

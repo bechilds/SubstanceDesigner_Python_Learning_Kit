@@ -13,6 +13,9 @@ QtGui = sdcompat.QtGui
 
 _LOG = "[MaxSDPlugin/SBSFileRepoter]"
 _dialog_ref = None
+_SETTINGS_ORGANIZATION = "MaxSDPlugin"
+_SETTINGS_APPLICATION = "SBSFileRepoter"
+_REPORT_DIRECTORY_KEY = "report_directory"
 
 
 if QtWidgets is not None:
@@ -75,11 +78,30 @@ if QtWidgets is not None:
             self.resize(860, 680)
             self._graph = None
             self._report = None
+            self._settings = QtCore.QSettings(
+                _SETTINGS_ORGANIZATION, _SETTINGS_APPLICATION, self)
             self._build_ui()
             self._refresh()
 
         def _build_ui(self):
             layout = QtWidgets.QVBoxLayout(self)
+
+            path_box = QtWidgets.QGroupBox("默认报告保存路径", self)
+            path_layout = QtWidgets.QHBoxLayout(path_box)
+            self._report_directory_edit = QtWidgets.QLineEdit(self)
+            self._report_directory_edit.setText(
+                str(self._settings.value(_REPORT_DIRECTORY_KEY, "") or ""))
+            self._report_directory_edit.setPlaceholderText("未设置时使用当前 SBS 所在目录")
+            browse_directory_button = QtWidgets.QPushButton("选择路径", self)
+            open_directory_button = QtWidgets.QPushButton("打开路径", self)
+            self._report_directory_edit.editingFinished.connect(
+                self._save_report_directory_setting)
+            browse_directory_button.clicked.connect(self._choose_report_directory)
+            open_directory_button.clicked.connect(self._open_report_directory)
+            path_layout.addWidget(self._report_directory_edit, 1)
+            path_layout.addWidget(browse_directory_button)
+            path_layout.addWidget(open_directory_button)
+            layout.addWidget(path_box)
 
             self._report_content = QtWidgets.QWidget(self)
             report_layout = QtWidgets.QVBoxLayout(self._report_content)
@@ -168,9 +190,14 @@ if QtWidgets is not None:
                 self._node_table.setRowCount(0)
                 self._warning_table.setRowCount(0)
                 return
+            if not self._report_directory_edit.text().strip():
+                default_directory = self._current_package_directory()
+                if default_directory:
+                    self._report_directory_edit.setText(default_directory)
+                    self._save_report_directory_setting()
             try:
                 self._report = reporter_logic.analyze_graph(self._graph)
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 self._report = None
                 self._score.setText(f"分析失败：{error}")
                 self._histogram.set_bins([])
@@ -249,6 +276,80 @@ if QtWidgets is not None:
                 method = QtWidgets.QMessageBox.information if ok else QtWidgets.QMessageBox.warning
                 method(self, "SBSFileRepoter", message)
 
+        def _current_package_directory(self):
+            """返回当前 SBS 所在目录；未保存或读取失败时返回空字符串。"""
+            try:
+                package = self._graph.getPackage() if self._graph is not None else None
+                package_path = str(package.getFilePath() or "") if package is not None else ""
+                return os.path.dirname(os.path.abspath(package_path)) if package_path else ""
+            except sdcompat.SD_API_ERRORS as error:
+                print(f"{_LOG} 读取当前 SBS 路径失败: {error}")
+                return ""
+
+        def _save_report_directory_setting(self):
+            """把用户输入的报告目录写入当前插件的持久化设置。"""
+            directory = os.path.normpath(
+                os.path.expandvars(os.path.expanduser(
+                    self._report_directory_edit.text().strip())))
+            if directory == ".":
+                directory = ""
+            self._report_directory_edit.setText(directory)
+            self._settings.setValue(_REPORT_DIRECTORY_KEY, directory)
+            self._settings.sync()
+
+        def _choose_report_directory(self):
+            """选择默认报告目录并立即缓存。"""
+            start_directory = (
+                self._report_directory_edit.text().strip()
+                or self._current_package_directory()
+                or os.getcwd())
+            directory = QtWidgets.QFileDialog.getExistingDirectory(
+                self, "选择默认报告保存路径", start_directory)
+            if not directory:
+                return
+            self._report_directory_edit.setText(os.path.normpath(directory))
+            self._save_report_directory_setting()
+
+        def _report_directory(self, create=False):
+            """返回已配置目录，可选创建；失败时抛出便于 UI 展示的错误。"""
+            self._save_report_directory_setting()
+            directory = self._report_directory_edit.text().strip()
+            if not directory:
+                directory = self._current_package_directory()
+            if not directory:
+                raise RuntimeError("请先选择默认报告保存路径")
+            if create:
+                os.makedirs(directory, exist_ok=True)
+            if not os.path.isdir(directory):
+                raise RuntimeError(f"报告路径不是有效文件夹：{directory}")
+            return directory
+
+        def _open_report_directory(self):
+            """使用 Windows 资源管理器打开当前设置的报告目录。"""
+            try:
+                directory = self._report_directory(create=True)
+                os.startfile(directory)
+            except sdcompat.SD_API_ERRORS as error:
+                QtWidgets.QMessageBox.warning(
+                    self, "SBSFileRepoter", f"无法打开报告路径：{error}")
+                print(f"{_LOG} 打开报告路径失败: {error}")
+
+        def _report_file_name(self):
+            """根据当前 SBS 名称生成 Windows 可用的报告文件名。"""
+            package_name = ""
+            try:
+                package = self._graph.getPackage() if self._graph is not None else None
+                package_path = str(package.getFilePath() or "") if package is not None else ""
+                package_name = os.path.splitext(os.path.basename(package_path))[0]
+            except sdcompat.SD_API_ERRORS:
+                pass
+            if not package_name and self._report:
+                package_name = os.path.splitext(str(self._report.get("file_name", "")))[0]
+            safe_name = "".join(
+                character if character not in '<>:"/\\|?*' else "_"
+                for character in package_name).strip(" ._")
+            return (safe_name or "sbs_report") + "_complexity_report.png"
+
         def _save_report_screenshot(self):
             """把规则、评分和当前报告页保存为 PNG，不包含底部操作按钮。"""
             if self._report is None:
@@ -256,26 +357,14 @@ if QtWidgets is not None:
                     self, "SBSFileRepoter", "当前没有可保存的报告，请先完成检查。")
                 return
             try:
-                package = self._graph.getPackage() if self._graph is not None else None
-                package_path = str(package.getFilePath() or "") if package is not None else ""
-                if package_path:
-                    base_path = os.path.splitext(package_path)[0]
-                else:
-                    safe_name = os.path.splitext(self._report["file_name"])[0]
-                    base_path = os.path.abspath(safe_name if safe_name else "sbs_report")
-                default_path = base_path + "_complexity_report.png"
-                output_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
-                    self, "保存复杂度报告截图", default_path, "PNG 图片 (*.png)")
-                if not output_path:
-                    return
-                if not output_path.lower().endswith(".png"):
-                    output_path += ".png"
+                output_path = os.path.join(
+                    self._report_directory(create=True), self._report_file_name())
                 pixmap = self._report_content.grab()
                 if pixmap.isNull() or not pixmap.save(output_path, "PNG"):
                     raise RuntimeError("Qt 无法生成或写入 PNG 图片")
                 QtWidgets.QMessageBox.information(
                     self, "SBSFileRepoter", f"报告截图已保存：\n{output_path}")
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 QtWidgets.QMessageBox.critical(
                     self, "SBSFileRepoter", f"保存报告截图失败：{error}")
                 print(f"{_LOG} 保存报告截图失败: {error}")
@@ -305,22 +394,20 @@ if QtWidgets is not None:
                 exporter = SDSBSARExporter.sNew()
                 exporter.exportPackageToSBSAR(package, output_path)
                 QtWidgets.QMessageBox.information(self, "SBSFileRepoter", f"发布完成：\n{output_path}")
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 QtWidgets.QMessageBox.critical(self, "SBSFileRepoter", f"发布失败：{error}")
                 print(f"{_LOG} 发布失败: {error}")
 
 
 def show_window(main_win=None):
-    """菜单入口；保存模块级引用，避免窗口被垃圾回收。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
     try:
-        parent = main_win or sdcompat.get_main_window()
-        _dialog_ref = SBSFileRepoterDialog(parent)
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-    except Exception as error:
-        print(f"{_LOG} 打开窗口失败: {error}")
+        return show_dialog(__name__, lambda: SBSFileRepoterDialog(main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

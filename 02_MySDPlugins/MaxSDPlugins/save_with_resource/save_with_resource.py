@@ -20,12 +20,12 @@ _APPROVED_LIBRARY_ROOT = ntpath.normcase(ntpath.normpath(r"D:\LG_SDNodes"))
 def _as_list(value):
     try:
         return list(value)
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         result = []
         try:
             for index in range(len(value)):
                 result.append(value[index])
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             pass
         return result
 
@@ -33,7 +33,7 @@ def _as_list(value):
 def _file_path(owner):
     try:
         return str(owner.getFilePath() or "")
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return ""
 
 
@@ -58,7 +58,7 @@ def _official_package_roots():
             install_root = normalized[:marker_index]
             roots.append(ntpath.normcase(ntpath.normpath(
                 ntpath.join(install_root, "resources", "packages"))))
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         pass
     return roots
 
@@ -66,7 +66,7 @@ def _official_package_roots():
 def _is_under_root(path, root):
     try:
         return ntpath.commonpath([path, root]) == root
-    except Exception:
+    except sdcompat.SD_API_ERRORS:
         return False
 
 
@@ -99,7 +99,7 @@ def collect_external_files(package):
             return path
         try:
             return str(current_package.getUID() or id(current_package))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             return str(id(current_package))
 
     def _scan(current_package):
@@ -111,7 +111,7 @@ def collect_external_files(package):
 
         try:
             resources = _as_list(current_package.getChildrenResources(True))
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             resources = []
         for resource in resources:
             path = _file_path(resource)
@@ -123,7 +123,7 @@ def collect_external_files(package):
 
         try:
             dependencies = _as_list(current_package.getDependencies())
-        except Exception:
+        except sdcompat.SD_API_ERRORS:
             dependencies = []
         for dependency in dependencies:
             path = _file_path(dependency)
@@ -135,7 +135,7 @@ def collect_external_files(package):
             collected.setdefault(normalized, {"source": path, "kinds": set()})["kinds"].add("dependency")
             try:
                 nested_package = dependency.getPackage()
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 nested_package = None
             if nested_package is not None:
                 _scan(nested_package)
@@ -164,6 +164,10 @@ def _copy_name(source, used_names):
     stem, extension = os.path.splitext(base_name)
     suffix = hashlib.sha1(source.lower().encode("utf-8")).hexdigest()[:8]
     candidate = f"{stem}_{suffix}{extension}"
+    index = 2
+    while candidate.lower() in used_names:
+        candidate = f"{stem}_{suffix}_{index}{extension}"
+        index += 1
     used_names.add(candidate.lower())
     return candidate
 
@@ -201,7 +205,7 @@ def save_package_with_resources(app, package, target_folder, items):
                 shutil.copy2(item["source"], destination)
                 entry["copied_to"] = os.path.relpath(destination, target_folder)
                 entry["status"] = "copied"
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 entry["status"] = "error"
                 entry["error"] = str(error)
         manifest_items.append(entry)
@@ -266,7 +270,7 @@ if QtWidgets is not None:
             graph = sdcompat.get_current_graph(self._app)
             try:
                 self._package = graph.getPackage() if graph is not None else None
-            except Exception:
+            except sdcompat.SD_API_ERRORS:
                 self._package = None
             self._items = collect_external_files(self._package)
             missing_count = sum(1 for item in self._items if not item["exists"])
@@ -302,7 +306,7 @@ if QtWidgets is not None:
                     return
             try:
                 manifest = save_package_with_resources(self._app, self._package, target, self._items)
-            except Exception as error:
+            except sdcompat.SD_API_ERRORS as error:
                 QtWidgets.QMessageBox.critical(self, "SaveWithResrouce", f"保存失败：{error}")
                 print(f"{_LOG} 保存失败: {error}")
                 return
@@ -315,15 +319,14 @@ if QtWidgets is not None:
 
 
 def show_window(main_win=None):
-    """菜单入口。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
     try:
-        _dialog_ref = SaveWithResrouceDialog(main_win or sdcompat.get_main_window())
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-    except Exception as error:
-        print(f"{_LOG} 打开窗口失败: {error}")
+        return show_dialog(__name__, lambda: SaveWithResrouceDialog(main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

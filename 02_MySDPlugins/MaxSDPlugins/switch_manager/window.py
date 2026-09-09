@@ -79,6 +79,13 @@ if QtWidgets is not None:
             switch_row = QtWidgets.QHBoxLayout()
             self._expression_label = QtWidgets.QLabel(self)
             switch_row.addWidget(self._expression_label, 1)
+            repair_button = QtWidgets.QPushButton("补齐本组开关控件", self)
+            repair_button.setToolTip(
+                "仅补齐当前开关 Group 中 Boolean 参数的空按钮控件配置。\n"
+                "保留已有控件、参数值和 Visible If；可 Ctrl+Z 撤销。\n"
+                "完成后请保存 SBS 并重新发布 SBSAR。")
+            repair_button.clicked.connect(self._repair_switch_editors)
+            switch_row.addWidget(repair_button)
             refresh_switches_button = QtWidgets.QPushButton(
                 "按 Group 刷新开关列表", self)
             refresh_switches_button.clicked.connect(
@@ -134,6 +141,7 @@ if QtWidgets is not None:
 
         def _refresh(self, selected_switch_id=None, sync_package=False):
             graph = logic.get_current_graph()
+            self._scope = logic.get_graph_scope(graph)
             self._tree.clear()
             self._switch_list.clear()
             if graph is None:
@@ -327,9 +335,8 @@ if QtWidgets is not None:
             self._expression_label.setText("写入表达式：" + expression)
 
         def _create_switch(self):
-            graph = logic.get_current_graph()
+            graph = self._checked_graph()
             if graph is None:
-                self._warn("未找到当前 Graph。")
                 return
             try:
                 result = logic.create_boolean_switch(
@@ -347,17 +354,35 @@ if QtWidgets is not None:
                 f"已创建 Boolean 开关：{result['id']}，"
                 f"初始值为 {result['initial_value']}。")
             if result["warnings"]:
-                message += "\n设置 Label 时有警告：\n" + "\n".join(
+                message += "\n设置 Label / Group 时有警告：\n" + "\n".join(
                     result["warnings"])
             QtWidgets.QMessageBox.information(self, self.windowTitle(), message)
 
+        def _repair_switch_editors(self):
+            graph = self._checked_graph()
+            if graph is None:
+                return
+            summary = logic.repair_boolean_switch_editors(
+                graph, self._switch_group.currentText())
+            message = (
+                f"已补齐 {len(summary['updated'])} 个开关控件；"
+                f"保留已有配置 {len(summary['skipped'])} 个。")
+            if summary["updated"]:
+                message += "\n已补齐：" + ", ".join(summary["updated"])
+                message += "\n请保存 SBS 并重新发布 SBSAR。可 Ctrl+Z 撤销。"
+            if summary["failed"]:
+                message += "\n未完成：\n" + "\n".join(
+                    f"{key}: {reason}" for key, reason in summary["failed"])
+                self._warn(message)
+            else:
+                QtWidgets.QMessageBox.information(self, self.windowTitle(), message)
+
         def _apply_switch(self):
-            graph = logic.get_current_graph()
+            graph = self._checked_graph()
+            if graph is None:
+                return
             switch_id = self._current_switch_id()
             target_ids = self._checked_ids()
-            if graph is None:
-                self._warn("未找到当前 Graph。")
-                return
             if not switch_id:
                 self._warn("请先创建或选择一个 Boolean 开关参数。")
                 return
@@ -373,6 +398,9 @@ if QtWidgets is not None:
                 QtWidgets.QMessageBox.No,
             )
             if confirm != QtWidgets.QMessageBox.Yes:
+                return
+            graph = self._checked_graph()
+            if graph is None:
                 return
             try:
                 summary = logic.assign_switch(
@@ -393,11 +421,10 @@ if QtWidgets is not None:
                     self, self.windowTitle(), message)
 
         def _apply_value_changes(self):
-            graph = logic.get_current_graph()
-            updates = self._changed_values()
+            graph = self._checked_graph()
             if graph is None:
-                self._warn("未找到当前 Graph。")
                 return
+            updates = self._changed_values()
             if not updates:
                 self._warn("没有检测到可应用的当前数值修改。")
                 return
@@ -414,11 +441,10 @@ if QtWidgets is not None:
                     self, self.windowTitle(), message)
 
         def _clear_visible_if(self):
-            graph = logic.get_current_graph()
-            target_ids = self._checked_ids()
+            graph = self._checked_graph()
             if graph is None:
-                self._warn("未找到当前 Graph。")
                 return
+            target_ids = self._checked_ids()
             if not target_ids:
                 self._warn("请至少勾选一个要清除 Visible If 的参数或 Group。")
                 return
@@ -432,6 +458,9 @@ if QtWidgets is not None:
             )
             if confirm != QtWidgets.QMessageBox.Yes:
                 return
+            graph = self._checked_graph()
+            if graph is None:
+                return
             summary = logic.clear_visible_if(graph, target_ids)
             self._refresh(sync_package=True)
             message = f"已清除 {len(summary['updated'])} 个参数的 Visible If。"
@@ -444,29 +473,30 @@ if QtWidgets is not None:
                 QtWidgets.QMessageBox.information(
                     self, self.windowTitle(), message)
 
+        def _checked_graph(self):
+            """所有写操作共享范围校验；确认弹窗返回后也必须重新检查。"""
+            graph = logic.get_current_graph()
+            scope = logic.get_graph_scope(graph)
+            if self._scope is None or scope != self._scope:
+                self._warn("当前 Graph 或 SBS 已变化，或无法验证执行范围。请刷新参数列表后重试。")
+                return None
+            return graph
+
         def _warn(self, message):
             QtWidgets.QMessageBox.warning(self, self.windowTitle(), message)
 
 
 def show_window(parent=None):
-    """显示开关管理工具窗口，并保留模块级引用。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print("[MaxSDPlugin/switch_manager] Qt 不可用，无法显示窗口")
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
         return None
     try:
-        if _dialog_ref is not None:
-            _dialog_ref.close()
-        _dialog_ref = SwitchManagerDialog(parent)
-        _dialog_ref.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-        _dialog_ref.destroyed.connect(lambda: _clear_dialog_ref())
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-        return _dialog_ref
-    except logic._SD_API_ERRORS as error:
-        print(f"[MaxSDPlugin/switch_manager] 打开窗口失败: "
-              f"{logic._error_text(error)}")
+        return show_dialog(__name__, lambda: SwitchManagerDialog(parent or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(parent, "MaxSDPlugin", sdcompat.error_text(error))
         return None
 
 

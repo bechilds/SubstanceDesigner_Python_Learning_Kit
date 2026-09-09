@@ -6,6 +6,8 @@ import math
 import re
 import xml.etree.ElementTree as ET
 
+from .. import sdcompat
+
 _LOG = "[MaxSDPlugin/preset_recovery]"
 
 try:
@@ -13,12 +15,8 @@ try:
 except Exception:
     SDPropertyCategory = None
 
-try:
-    from sd.api.apiexception import APIException
-except Exception:
-    APIException = Exception
-
-_SD_ERRORS = (APIException, Exception)
+APIException = sdcompat.APIException
+_SD_ERRORS = sdcompat.SD_API_ERRORS
 
 
 def _local_name(tag):
@@ -376,17 +374,23 @@ def create_or_replace_preset(graph, label, prepared_inputs, overwrite=False):
         with _undo_group("MaxSDPlugin 创建或覆盖 Graph Preset"):
             if existing is not None:
                 graph.deletePreset(label)
-            created = graph.newPreset(label)
             try:
+                created = graph.newPreset(label)
                 for identifier, value in prepared_inputs:
                     created.addInput(identifier, value)
-            except _SD_ERRORS:
+            except _SD_ERRORS as write_error:
                 try:
-                    graph.deletePreset(label)
-                except _SD_ERRORS:
-                    pass
-                if snapshot is not None:
-                    _restore_preset(graph, label, snapshot)
+                    # 创建也可能在抛错前留下半成品；仅在确实存在时清理。
+                    if graph.getPreset(label) is not None:
+                        graph.deletePreset(label)
+                    if snapshot is not None:
+                        _restore_preset(graph, label, snapshot)
+                except _SD_ERRORS as recovery_error:
+                    raise ValueError(
+                        f"写入失败: {str(write_error) or type(write_error).__name__}；"
+                        f"恢复失败: {str(recovery_error) or type(recovery_error).__name__}。"
+                        "请检查当前 Preset，尝试撤销；确认恢复前不要保存 SBS。"
+                    ) from write_error
                 raise
     except _SD_ERRORS as error:
         raise ValueError(f"创建 Preset 失败: {str(error) or type(error).__name__}") from error

@@ -36,13 +36,13 @@ def _add_category(parent_menu, main_win, ctx, title, import_path, attr, fail_tit
         import traceback
         err = traceback.format_exc()
         print(f"[MaxSDPlugin] 加载 {fail_title} 失败: {e}\n{err}")
-        act = QAction(f"{fail_title}（加载失败，点击查看原因）", main_win)
+        act = QAction(f"{fail_title}（加载失败，点击查看原因）", submenu)
         act.triggered.connect(lambda: QtWidgets.QMessageBox.critical(
             main_win, f"MaxSDPlugin · {fail_title} 加载失败", err))
         submenu.addAction(act)
         ctx["keep"].append(act)
         return
-    act = QAction(fail_title, main_win)
+    act = QAction(fail_title, submenu)
     act.triggered.connect(lambda: show(main_win))
     submenu.addAction(act)
     ctx["keep"].extend([submenu, act])
@@ -60,7 +60,7 @@ def build_menu(menu, main_win, ctx):
         return keep
 
     # 顶部高亮版本号
-    ver = QAction(f"● 版本 v{ctx['get_version']()}", main_win)
+    ver = QAction(f"● 版本 v{ctx['get_version']()}", menu)
     f = ver.font(); f.setBold(True); ver.setFont(f)
     ver.triggered.connect(ctx["show_about"])
     menu.addAction(ver)
@@ -77,12 +77,12 @@ def build_menu(menu, main_win, ctx):
     keep.append(ver)
     menu.addSeparator()
 
-    about = QAction("关于 / 版本信息", main_win)
+    about = QAction("关于 / 版本信息", menu)
     about.triggered.connect(ctx["show_about"])
     menu.addAction(about)
     keep.append(about)
 
-    reload_act = QAction("重载插件（Unload→Load）", main_win)
+    reload_act = QAction("重载插件（Unload→Load）", menu)
     reload_act.triggered.connect(ctx["reload_plugin"])
     menu.addAction(reload_act)
     keep.append(reload_act)

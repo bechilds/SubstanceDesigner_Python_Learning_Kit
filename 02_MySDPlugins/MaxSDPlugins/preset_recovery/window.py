@@ -318,29 +318,18 @@ if QtWidgets is not None:
 
 
 def show_window(main_win=None):
-    """菜单入口：为当前 Graph 打开预设效果找回窗口。"""
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法显示窗口。")
-        return
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
+    graph = sdcompat.get_current_graph()
+    if graph is None:
+        QtWidgets.QMessageBox.information(main_win, "预设效果找回", "请先打开目标 Graph。")
+        return None
     try:
-        graph = sdcompat.get_current_graph()
-        if graph is None:
-            QtWidgets.QMessageBox.information(
-                main_win, "预设效果找回", "请先在 Graph 视图中打开要恢复参数的 Graph。")
-            return
-        if main_win is None:
-            main_win = sdcompat.get_main_window()
-        if _dialog_ref is not None:
-            try:
-                _dialog_ref.close()
-            except Exception:
-                pass
-        _dialog_ref = PresetRecoveryDialog(graph, main_win)
-        _dialog_ref.show()
-        _dialog_ref.raise_()
-        _dialog_ref.activateWindow()
-    except Exception as error:
-        print(f"{_LOG} 打开窗口失败: {error}")
-        QtWidgets.QMessageBox.critical(
-            main_win, "预设效果找回", f"打开窗口失败：{error}")
+        return show_dialog(__name__, lambda: PresetRecoveryDialog(graph, main_win or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(main_win, "MaxSDPlugin", sdcompat.error_text(error))
+        return None

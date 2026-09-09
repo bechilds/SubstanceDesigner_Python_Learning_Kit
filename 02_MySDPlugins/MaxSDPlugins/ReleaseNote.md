@@ -1,7 +1,13 @@
-我的插件功能计划
+# MaxSDPlugin 更新记录与功能计划
 插件名称：MaxSDPlugin
 
 ## 更新记录（格式：日期 · vX.Y.Z · 改动 · 影响范围 · 是否需重启 SD）
+
+- 2026-09-09 · v0.25.2 · 开关写操作校验扫描范围；预设创建失败恢复旧内容并报告恢复错误；资源哈希重名继续编号；新增 9 项回归 · switch_manager v0.19.8、preset_recovery v0.20.2、save_with_resource v0.8.2 · 功能可 Unload→Load；入口回退版本需重启；SD13/16 实机待验证，未发布 MG
+
+- 2026-09-08 · v0.25.1 · 修复新建 Boolean 开关遗漏 editor=buttons，读回失败清理新参数；增加本组空控件补齐，保留已有控件和值 · switch_manager v0.19.7 · 功能可 Unload→Load；入口回退版本需重启，SD13/16 实机加载与撤销待验证，未发布到 MG
+- 2026-09-04 · v0.25.0 · 统一 11 个窗口单实例与关闭释放，修复菜单/子模块/兼容层重载清理；补齐 SD APIException 边界；批处理运行锁定与覆盖复查；Publish Checker 增加删除确认；导出层拆分、AST 依赖闭包、真实包隔离、SBS 资源和 MG 清单；新增离线回归与 CI 配置 · 框架、工具入口、导出、批处理、文档 · 需重启 SD 一次；目标 SD13/16 实机验证待完成，未发布到 MG
+- 2026-08-18 · v0.24.0 · SBSFileRepoter 新增默认报告保存路径设置并通过插件专属 QSettings 持久化；截图可直接输出到该目录，并可用 Windows 资源管理器打开当前路径 · sbs_file_reporter/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
 - 2026-08-13 · v0.23.0 · 曝光参数“参数分组排序”新增组内参数排序、受约束的树内拖拽、Ctrl+上/下快捷移动及“更改分组”：分组只能在顶层排序，参数可在组内拖动或拖入其他组；应用时同步 SBS 的直接 Group 与 metadata Group，并继续保持 INPUTS 原槽位不变 · expose_param_sorting/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
 - 2026-08-11 · v0.22.0 · OutputTools 新增“输出到 MG”：可选择任意 MaxSD 根目录，按分类生成 `LG_MaxSD_*` 模块并写入共享兼容层；自动改写相对 import、处理同名模块冲突并提示未勾选依赖，同时补齐当前功能分类扫描 · output_tools/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
 - 2026-08-11 · v0.21.1 · 曝光参数“删除勾选项”在重置依赖节点函数前缓存曝光参数当前 SDValue，重置后将该值写成节点常量，取消曝光不再回到旧默认值 · output/+版本+文档 · 功能和热重载版本无需重启，入口回退版本生效需重启
@@ -94,3 +100,18 @@ LGSD节点库自动更新
 统一修改frame类的A值
 检查输出的Identifier 和 Usage 是否一致
 提示输出3个通道，避免unity 索引错误
+## v0.25.0 对应工具开发版本
+
+- `auto_add_expose_comment`：v0.15.6
+- `batch_merge_tex_channel`：v0.14.2
+- `debug`：v0.4.9
+- `expose_param_sorting`：v0.23.1
+- `frame_color_modify`：v0.8.1
+- `output`：v0.21.2
+- `output_tools`：v0.23.0
+- `preset_recovery`：v0.20.1
+- `save_with_resource`：v0.8.1
+- `sbs_file_reporter`：v0.24.1
+- `switch_manager`：v0.19.6
+
+本次未改变外部团队路径规则，未改名公开入口或菜单；历史 MG 发布记录保留。后续再评估曝光参数和 Comment 等大型业务模块的深层拆分。

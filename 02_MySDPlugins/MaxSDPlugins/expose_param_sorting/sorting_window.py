@@ -499,26 +499,17 @@ if QtWidgets is not None:
 # ─────────────────────────────────────────────────────────────────────────── #
 
 def show_window(parent=None):
-    global _dialog_ref
+    """公开入口：统一单实例、关闭释放；兼容旧调用签名。"""
+    from ..shared.lifecycle import show_dialog
+    from .. import sdcompat
     if QtWidgets is None:
-        print(f"{_LOG} PySide 不可用，无法打开窗口。")
-        return
-
-    sdcompat.qt_patch()
-
-    if _dialog_ref is not None:
-        try:
-            _dialog_ref.raise_()
-            _dialog_ref.activateWindow()
-            return
-        except Exception:
-            _dialog_ref = None
-
-    dlg = ExposeParamSortingDialog(parent)
-    _dialog_ref = dlg
-    dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-    dlg.destroyed.connect(lambda: _clear_dialog_ref())
-    dlg.show()
+        print('[MaxSDPlugin] Qt 不可用，无法显示窗口。')
+        return None
+    try:
+        return show_dialog(__name__, lambda: ExposeParamSortingDialog(parent or sdcompat.get_main_window()), globals())
+    except sdcompat.SD_API_ERRORS as error:
+        QtWidgets.QMessageBox.critical(parent, "MaxSDPlugin", sdcompat.error_text(error))
+        return None
 
 
 def _clear_dialog_ref():

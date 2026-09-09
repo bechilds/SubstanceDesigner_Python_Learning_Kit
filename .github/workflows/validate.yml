@@ -1,0 +1,14 @@
+name: Validate plugin
+on: [push, pull_request]
+jobs:
+  static-tests:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python 02_MySDPlugins/utilities/validate_project.py
